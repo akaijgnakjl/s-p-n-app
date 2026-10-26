@@ -1,0 +1,73 @@
+/* Palette, type and spacing are shared by the app. Generated A4 documents own their CSS. */
+:root {
+  --canvas: #f7f8fa;
+  --paper: #ffffff;
+  --text: #202630;
+  --muted: #606a78;
+  --border: #e0e4e9;
+  --control-border: #7f8b9a;
+  --soft: #f0f2f5;
+  --brand: #435b73;
+  --brand-hover: #334a60;
+  --brand-soft: #f0f3f6;
+  --brand-line: #9fadbb;
+  --success: #2d6a5f;
+  --success-soft: #edf5f2;
+  --warning: #875f24;
+  --warning-soft: #fbf5e9;
+  --danger: #a84549;
+  --danger-soft: #fbeef0;
+  --shadow: 0 2px 8px rgb(32 38 48 / .035);
+  --shadow-floating: 0 12px 36px rgb(32 38 48 / .12);
+  --radius: 12px;
+  --control-radius: 8px;
+  --space-half: 2px;
+  --space-optical: 3px;
+  --space-1: 4px;
+  --space-field: 6px;
+  --space-2: 8px;
+  --space-control: 10px;
+  --space-3: 12px;
+  --space-button: 14px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --font-body: 14px;
+  --font-title: 20px;
+  --font-section: 18px;
+  --font-subtitle: 16px;
+  --font-caption: 12px;
+  --font-caption-small: 11px;
+  --font-data: 13px;
+  --font-brand: 18px;
+  --font-metric: 28px;
+  --font-icon: 24px;
+  --font-display: clamp(26px, 2.6vw, 34px);
+  --line-body: 1.6;
+  --line-control: 1.4;
+  --line-textarea: 1.65;
+  --font-label: 12px;
+  --font-control: 13px;
+  --font-input: 14px;
+  --control-height: 40px;
+  --control-padding-block: 8px;
+  --control-padding-inline: 14px;
+  --checkbox-size: 18px;
+}
+@media(max-width:760px) {
+  :root {
+    --font-label: 13px;
+    --font-control: 14px;
+    --font-brand: 17px;
+    --font-input: 16px;
+    --control-height: 44px;
+    --control-padding-block: 10px;
+    --control-padding-inline: 12px;
+    --checkbox-size: 20px;
+  }
+}
+@media(max-width:360px) {
+  :root { --font-brand: 15px; }
+}

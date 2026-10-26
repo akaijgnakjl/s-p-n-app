@@ -1,0 +1,24 @@
+/* Element defaults, typography and accessibility. */
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  font-size: var(--font-body);
+  font-synthesis: none;
+  color-scheme: light;
+  color: var(--text);
+  background: var(--canvas);
+}
+
+* { box-sizing: border-box; }
+html { scrollbar-gutter:stable; }
+/* Position restoration is explicit; browser anchors must not follow content below an opened summary. */
+body { margin: 0; line-height: var(--line-body); overflow-anchor: none; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+h1, h2, h3, p { margin: 0; }
+h1 { margin: var(--space-2) 0 var(--space-3); font-size: var(--font-display); font-weight: 750; letter-spacing: -.025em; line-height: 1.35; }
+h2 { font-size: var(--font-section); font-weight: 700; line-height: 1.4; letter-spacing: -.015em; }
+h3 { font-size: var(--font-subtitle); font-weight: 650; line-height: 1.5; }
+p { color: var(--muted); line-height: 1.75; }
+small { line-height: 1.6; }
+a { color: var(--brand-hover); text-underline-offset: 3px; }
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); clip-path: inset(50%); white-space: nowrap; border: 0; }

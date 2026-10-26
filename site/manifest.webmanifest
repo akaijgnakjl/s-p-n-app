@@ -1,0 +1,13 @@
+{
+  "id": "./",
+  "name": "測量フォトノート",
+  "short_name": "測量フォト",
+  "description": "現場の写真と黒板・用途・所属を、作業ZIPで引き継ぐノート。",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f8fa",
+  "theme_color": "#435b73",
+  "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
