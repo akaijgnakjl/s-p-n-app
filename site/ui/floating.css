@@ -40,3 +40,4 @@ details[data-floating] > .ui-disclosure-body.ui-floating-panel::backdrop { backg
 @media print {
   details[data-floating] > .ui-disclosure-body.ui-floating-panel { display: none !important; }
 }
+@media(max-width:760px){details[data-floating]>.ui-disclosure-body.ui-floating-panel{padding:12px}details[data-floating]>.ui-disclosure-body.ui-floating-panel[data-floating-kind="menu"]{padding:8px}.ui-floating-panel .dialog-fields{gap:10px;margin:10px 0}}

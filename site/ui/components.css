@@ -336,13 +336,23 @@ footer span { color:var(--muted); font-size:var(--font-caption-small); }
 
 /* Component behavior at touch sizes; page grids remain in screens.css. */
 @media(max-width:760px) {
-  .photo-drawer, .ui-dialog--drawer { inset: 0; width: 100vw; height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .photo-drawer, .ui-dialog--drawer { inset: 0; width: calc(100vw - 16px); height: 88dvh; max-height:88dvh; margin:auto; border:1px solid var(--border); border-radius:12px; }
   .drawer-body { padding: var(--space-4); padding-bottom: max(var(--space-6), env(safe-area-inset-bottom)); }
   .drawer-pagination button { min-width: 88px; }
   .photo-detail-preview img { height: min(38dvh, 320px); }
   .empty-state { padding: var(--space-8) var(--space-4); }
   .missing-record-list li { align-items: flex-start; flex-wrap: wrap; gap: var(--space-2); }
-  dialog:not(.photo-drawer):not(.preview-dialog):not(.ui-dialog--drawer):not(.ui-dialog--preview) { width: calc(100vw - var(--space-6)); max-height: 94dvh; padding: var(--space-5); border-radius: var(--radius); }
+  dialog:not(.photo-drawer):not(.preview-dialog):not(.ui-dialog--drawer):not(.ui-dialog--preview) { width: min(420px,calc(100vw - 24px)); max-height: 82dvh; padding:12px; border-radius: var(--radius); }
+  .ui-dialog--editor #editorForm{display:flex;flex-direction:column;max-height:calc(82dvh - 26px);min-height:0}
+  .ui-dialog--editor .dialog-heading{flex:0 0 auto;gap:8px}
+  .ui-dialog--editor .dialog-heading h2{font-size:16px}
+  .ui-dialog--editor .ui-dialog-body{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;margin-top:10px;gap:12px;padding:2px}
+  .ui-dialog--editor .dialog-fields{gap:10px;margin:10px 0}
+  .ui-dialog--editor .dialog-note{padding:10px;font-size:12px;line-height:1.6}
+  .ui-dialog--editor .dialog-actions{flex:0 0 auto;margin-top:12px;gap:8px}
+  .ui-dialog--editor .dialog-actions .button{flex:1;min-width:0;padding-inline:8px}
+  .ui-dialog--editor .field-error{flex:0 0 auto;margin-top:8px}
+  .preview-dialog, .ui-dialog--preview{inset:0;width:calc(100vw - 16px);height:90dvh;max-height:90dvh;margin:auto;border-radius:12px}
   .dialog-actions { flex-wrap: wrap; }
   .registration-preview { max-height: 32dvh; }
   .drawer-header { min-height: 64px; padding: var(--space-control) var(--space-4); }

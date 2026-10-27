@@ -38,7 +38,7 @@ function makeRecord(project, target, category, templateId = USE_CASES[target.use
   const definition = USE_CASES[target.useCase]; if (!definition.categories.includes(category)) fail('この用途で使用できる区分を選択してください');
   const group = target.groupId === null ? null : project.groups.find(item => item.id === target.groupId), mms = target.useCase === 'MMS';
   if (mms && templateId !== null) fail('MMSには電子黒板を付けません');
-  return { id: uid(), category, boardDefaults: mms ? null : createBoard(templateId, { job: project.name, route: group?.kind === '路線' ? group.name : '', location: group && group.kind !== '路線' ? group.name : '', point: target.name, note: defaultNote(target.useCase, category), date: localDate() }), applyBoardDefault: !mms, boardNoteMode: ['現密', 'コア密'].includes(target.useCase) ? 'auto' : 'manual', reportFields: {}, slots: definition.slots.map(name => ({ name, status: 'missing', reason: '', activePhotoId: null, photoIds: [] })) };
+  return { id: uid(), category, boardDefaults: mms ? null : createBoard(templateId, { job: project.name, route: group?.kind === '路線' ? group.name : '', location: group && group.kind !== '路線' ? group.name : '', point: ['現密','コア密'].includes(target.useCase) ? '' : target.name, note: defaultNote(target.useCase, category), date: localDate() }), applyBoardDefault: !mms, boardNoteMode: ['現密', 'コア密'].includes(target.useCase) ? 'auto' : 'manual', reportFields: {}, slots: definition.slots.map(name => ({ name, status: 'missing', reason: '', activePhotoId: null, photoIds: [] })) };
 }
 function findTarget(project, targetId) { const target = project.targets.find(item => item.id === targetId); if (!target) fail('対象が見つかりません'); return target; }
 export function getContext(project, recordId) { for (const target of project.targets) { const record = target.records.find(item => item.id === recordId); if (record) return { target, record, group: target.groupId === null ? null : project.groups.find(item => item.id === target.groupId) ?? null }; } fail('作業記録が見つかりません'); }
@@ -144,7 +144,7 @@ export function upgradeProject(raw) {
   const result = { ...rest, schemaVersion: 2, appVersion: '0.2.0', groups, targets, photos }; validateProject(result); return result;
 }
 
-export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.7.0', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
+export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.8.0', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
 export function addGroup(project, { kind, name } = {}) {
   validateProject(project); if (!GROUP_KINDS.includes(kind)) fail('グループの種類を選択してください'); const value = inputName(name, 'グループ名'); if (project.groups.length >= LIMITS.groups) fail('グループは50以内にしてください'); if (project.groups.some(group => group.kind === kind && normalizedName(group.name.trim()) === normalizedName(value))) fail('同じ種類に同名のグループがあります');
   const group = { id: uid(), kind, name: value }; project.groups.push(group); project.updatedAt = now(); return group;

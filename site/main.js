@@ -6,6 +6,8 @@ import { BOARD_TEMPLATES, BOARD_FIELD_KEYS, createBoard, boardAspectRatio } from
 import { loadBoardImages } from './board-assets.js';
 import { materialChoices } from './materials.js';
 import {exportPhotos} from './photo-export.js';
+import {readTSScreenshot} from './ts-screenshot.js';
+import {applyTSScreenshot} from './ts-screenshot-data.js';
 import {setRouteSection,describeTargetDeletion,deleteTargets} from './workflow.js';
 import { openStorage } from './storage.js';
 import { exportWorkPackage, importWorkPackage, PACKAGE_LIMITS } from './package.js';
@@ -21,7 +23,7 @@ import {createPreviewViewer} from './preview.js';
 import {createSession,sanitizeSession} from './session-state.js';
 import {createSessionSaver} from './session-save.js';
 import {detailHero,detailSection,renderDateDetails,photoTimeline,photoPagination} from './ui/photo-detail.js';
-import {renderTargetPicker,renderTargetTabs,renderPhotoSlot,renderBoardPanel,renderHistoryPanel,renderCaptureProgress,renderBoardChoices} from './ui/field-view.js';
+import {renderTargetPicker,renderTargetTabs,renderPhotoSlot,renderBoardPanel,renderHistoryPanel,renderCaptureProgress,renderBoardChoices,renderTargetNavigation,renderTSReading} from './ui/field-view.js';
 import {renderProjectHeader,renderCapacity,renderNextDate,renderInitialView,renderProjectSetupFields,renderHandoff} from './ui/project-view.js';
 import {mountAppShell} from './ui/shell.js';
 import {createNotifications} from './ui/notifications.js';
@@ -106,11 +108,11 @@ function scheduleSessionSave(){
   if(!project||!storage||busy||restoringSession)return;
   sessionSaver.schedule();
 }
-function sessionSnapshot(next=project,{fresh=false,zipDirty=dirty,clearNames=[],clearReports=false,clearBoards=false,clearBoardIds=[],clearPaste=false}={}){
+function sessionSnapshot(next=project,{fresh=false,zipDirty=dirty,clearNames=[],clearReports=false,clearReportKeys=[],clearBoards=false,clearBoardIds=[],clearPaste=false}={}){
   if(fresh)return createSession(next);
   const targets=new Map(next.targets.map(t=>[t.id,t])),records=new Map(next.targets.flatMap(t=>t.records.map(r=>[r.id,r])));
   const names=[...nameDrafts].filter(([id])=>targets.has(id)&&!clearNames.includes(id));
-  const reports=clearReports?[]:[...reportDrafts].filter(([key])=>records.has(key.slice(0,key.indexOf(':'))));
+  const reports=clearReports?[]:[...reportDrafts].filter(([key])=>records.has(key.slice(0,key.indexOf(':')))&&!clearReportKeys.includes(key));
   const boards=clearBoards?[]:[...boardDrafts].filter(([id])=>records.has(id)&&!clearBoardIds.includes(id));
   const raw={view:{mode,activeGroupId,activeTargetId,activeRecordId,useCaseFilter,onlyMissing,reportUseCase,activeCaptureSlot,
     organize:organizeState,disclosures:[...disclosureState],drawerPhotoId:next.photos.some(p=>p.id===drawerPhotoId)?drawerPhotoId:'',
@@ -250,6 +252,12 @@ function groupOptions(selected = '', includeAll = false) {
   return `${includeAll ? `<option value="__all__" ${selected === '__all__' ? 'selected' : ''}>すべての記録対象</option>` : ''}<option value="" ${!selected ? 'selected' : ''} disabled>路線を選択してください</option>${project.groups.map(group => `<option value="${group.id}" ${group.id === selected ? 'selected' : ''}>${esc(group.kind)}：${esc(group.name)}</option>`).join('')}`;
 }
 
+function navigateTarget(targetId,direction){
+  const next=selection().visible.find(target=>target.id===targetId);if(!next)return;
+  activeTargetId=next.id;activeRecordId='';activeCaptureSlot='';render();
+  document.querySelector(`[data-target-direction="${direction}"]:not(:disabled)`)?.focus({preventScroll:true});
+}
+
 function locationLabel(group) { return group ? `${group.kind}：${group.name}` : '工事直下（グループなし）'; }
 
 function capacityPanel() {
@@ -285,10 +293,11 @@ function field(label,name,value='',{type='text',max=300,required=true,multiline=
   return (multiline?textareaField:textField)(label,{name,value,type,max,required});
 }
 
-function boardFields(board, applyBoard = true, choices = true) {
+function boardFields(board, applyBoard = true, choices = true, {omitPoint=false}={}) {
   const template = BOARD_TEMPLATES[board.templateId];
-  const visibleKeys = new Set(template.fields.map(item => item.key));
-  return `${choices?renderBoardChoices(board.templateId):''}${selectField('黒板の形式',optionItems(Object.values(BOARD_TEMPLATES).filter(item=>item.id!=='legacy-simple'||board.templateId===item.id).map(item=>[item.id,item.name]),board.templateId),{name:'templateId'})}${template.fields.map(item => field(item.label, `board-${item.key}`, board.values[item.key], {type:item.type || 'text',max:1000,required:applyBoard && !item.optional,multiline:!!item.large})).join('')}${BOARD_FIELD_KEYS.filter(key => !visibleKeys.has(key)).map(key => `<input type="hidden" name="board-${key}" value="${esc(board.values[key])}">`).join('')}${board.legacyColor?`<input type="hidden" name="legacyColor" value="${esc(board.legacyColor)}">`:''}`;
+  const fields=template.fields.filter(item=>!omitPoint||item.key!=='point');
+  const visibleKeys = new Set(fields.map(item => item.key));
+  return `${choices?renderBoardChoices(board.templateId):''}${selectField('黒板の形式',optionItems(Object.values(BOARD_TEMPLATES).filter(item=>item.id!=='legacy-simple'||board.templateId===item.id).map(item=>[item.id,item.name]),board.templateId),{name:'templateId'})}${fields.map(item => field(item.label, `board-${item.key}`, board.values[item.key], {type:item.type || 'text',max:1000,required:applyBoard && !item.optional,multiline:!!item.large})).join('')}${BOARD_FIELD_KEYS.filter(key => !visibleKeys.has(key)).map(key => `<input type="hidden" name="board-${key}" value="${esc(omitPoint&&key==='point'?'':board.values[key])}">`).join('')}${board.legacyColor?`<input type="hidden" name="legacyColor" value="${esc(board.legacyColor)}">`:''}`;
 }
 
 function readBoard(form) {
@@ -297,9 +306,9 @@ function readBoard(form) {
   return createBoard(templateId, values, templateId==='legacy-simple' && form.elements.legacyColor ? {legacyColor:form.elements.legacyColor.value}:{});
 }
 
-function boardFits(board) {
+function boardFits(board,{skipPoint=false}={}) {
   const template = BOARD_TEMPLATES[board.templateId];
-  for (const item of template.fields) if (!item.optional && !board.values[item.key].trim()) throw new Error(`黒板の${item.label}を入力してください。`);
+  for (const item of template.fields) if (!item.optional && !(skipPoint&&item.key==='point') && !board.values[item.key].trim()) throw new Error(`黒板の${item.label}を入力してください。`);
   const canvas = document.createElement('canvas'); canvas.width = 600; canvas.height = Math.round(600 / boardAspectRatio(board));
   const result = drawBoard(canvas.getContext('2d'), 0, 0, canvas.width, canvas.height, board);
   if (result?.overflow) throw new Error(`黒板の文字が収まりません：${result.overflowFields.map(key => template.fields.find(item => item.key === key)?.label || key).join('、')}。短くしてから保存してください。`);
@@ -321,7 +330,7 @@ async function flushBoardDrafts(persistLocally = true) {
   if (!boardDrafts.size) return;
   const next = clone(project);
   for (const [recordId, draft] of boardDrafts) {
-    if (draft.applyBoard) boardFits(draft.board);
+    if (draft.applyBoard) boardFits(draft.board,{skipPoint:isTrial(getContext(project,recordId).target.useCase)});
     const { record } = getContext(next, recordId);
     record.boardDefaults = clone(draft.board); record.applyBoardDefault = draft.applyBoard; record.boardNoteMode=draft.noteMode||'manual';
   }
@@ -647,7 +656,7 @@ function nextWorkDateDialog(recordId) {
 function photoDateDialog(id) {
   const photo=project.photos.find(item=>item.id===id);
   openDialog('この写真の作業日を確認・訂正',`<p class="hint">${esc(photo.originalName)}<br>${esc(captureSourceLabel(photo))}<br>取込日時：${esc(timestampLabel(photo.importedAt))}<br>実際の撮影日時：${esc(timestampLabel(photo.capturedAt))}</p>${dateState(photo)==='legacy'?'<p class="dialog-note">既存値の日付の出所・確認状態は旧ZIPだけでは判断できません。値を自動的に確認済みにはしていません。</p>':''}<div class="dialog-fields">${field('この写真の作業日（任意）','workDate',photo.workDate,{type:'date',required:false})}${hasBoardDate(photo.board)?`<p>黒板日付：${esc(photo.board.values.date||'空欄')}${photo.workDate!==photo.board.values.date?'（作業日と異なります）':''}</p>${selectField('黒板日付との反映方法',optionItems([['none','作業日だけを保存（黒板は保持）'],['board-to-work','黒板の日付を作業日へ明示反映'],['work-to-board','指定した作業日をこの写真の黒板へ明示反映']]),{name:'sync'})}`:''}</div><p class="hint">原本・写真ID・所属・取込日時は変えません。作業日の訂正は任意です。日付とその確認状態は完成版の条件に影響しません。</p>`,async data=>{
-    await mutate(next=>{setPhotoWorkDate(next,id,{value:data.get('workDate'),confirmed:data.get('confirmed')==='on',sync:data.get('sync')||'none'});const changed=next.photos.find(item=>item.id===id);if(data.get('sync')==='work-to-board'&&changed.applyBoard)boardFits(changed.board);},'作業日を保存しました。黒板の日付は選択した反映方法に従っています。');
+    await mutate(next=>{setPhotoWorkDate(next,id,{value:data.get('workDate'),confirmed:data.get('confirmed')==='on',sync:data.get('sync')||'none'});const changed=next.photos.find(item=>item.id===id);if(data.get('sync')==='work-to-board'&&changed.applyBoard)boardFits(changed.board,{skipPoint:isTrial(getContext(next,changed.recordId).target.useCase)});},'作業日を保存しました。黒板の日付は選択した反映方法に従っています。');
   });
 }
 
@@ -666,12 +675,12 @@ function editPhotoDialog(id) {
   const photo = project.photos.find(item => item.id === id);
   const context = getContext(project, photo.recordId);
   if (context.target.useCase === 'MMS'||(context.target.useCase==='TS出来形(バリアフリー)'&&photo.slot==='スマホスクリーンショット')) return;
-  openDialog('この写真の黒板を修正', `<p class="hint">${esc(context.target.name)} ／ ${esc(context.record.category)} ／ ${esc(photo.slot)}</p><div class="dialog-fields"><div id="photoBoardEditor" class="board-form">${boardFields(photo.board || context.record.boardDefaults,photo.applyBoard)}</div>${checkbox('電子黒板を合成する',{name:'applyBoard',checked:photo.applyBoard})}</div><p class="hint">この写真だけに反映します。実物の黒板が写っている場合は合成を外せます。原本は変更しません。</p>`, async data => {
+  openDialog('この写真の黒板を修正', `<p class="hint">${esc(context.target.name)} ／ ${esc(context.record.category)} ／ ${esc(photo.slot)}</p><div class="dialog-fields"><div id="photoBoardEditor" class="board-form">${boardFields(photo.board || context.record.boardDefaults,photo.applyBoard,true,{omitPoint:isTrial(context.target.useCase)})}</div>${checkbox('電子黒板を合成する',{name:'applyBoard',checked:photo.applyBoard})}</div><p class="hint">この写真だけに反映します。実物の黒板が写っている場合は合成を外せます。原本は変更しません。</p>`, async data => {
     const board = readBoard($('editorForm')); const applyBoard = data.get('applyBoard') === 'on';
-    if (applyBoard) boardFits(board);
+    if (applyBoard) boardFits(board,{skipPoint:isTrial(context.target.useCase)});
     await mutate(next => { const item = next.photos.find(p => p.id === id); item.boardNoteMode=item.board?.values.note===board.values.note?(item.boardNoteMode||'manual'):'manual';item.board = board; item.applyBoard = applyBoard; }, '写真の黒板を保存しました。作業日は変更していません。');
   });
-  $('editorForm').onchange = event => { if (['templateId','applyBoard'].includes(event.target.name)) $('photoBoardEditor').innerHTML = boardFields(readBoard($('editorForm')),$('editorForm').elements.applyBoard.checked); };
+  $('editorForm').onchange = event => { if (['templateId','applyBoard'].includes(event.target.name)) $('photoBoardEditor').innerHTML = boardFields(readBoard($('editorForm')),$('editorForm').elements.applyBoard.checked,true,{omitPoint:isTrial(context.target.useCase)}); };
 }
 
 function showImportReview(data) {
@@ -722,12 +731,12 @@ function beginCapture(recordId, slotName, source) {
   const board=screenshot?null:resolved.board;
   const applyBoard = !screenshot && context.target.useCase !== 'MMS' && Boolean(form?.elements.namedItem('applyBoard')?.checked ?? boardDraft(context.record).applyBoard);
   if (form && applyBoard && !form.checkValidity()) {form.closest('details').open=true;form.reportValidity();notify('黒板の未入力項目を確認してください。',true);return;}
-  if (board && applyBoard) boardFits(board);
+  if (board && applyBoard) boardFits(board,{skipPoint:isTrial(context.target.useCase)});
   activeCaptureSlot=screenshot?context.record.slots[0].name:slotName;
   if(board){boardDrafts.set(recordId,{board,applyBoard,noteMode:resolved.noteMode});if(form){form.elements.namedItem('board-note').value=board.values.note;const caption=$('captureBoardSlot');if(caption)caption.textContent=`対象写真：${slotName}`;drawPreview();}}
   const defaults=context.record.workDateDefault;
   const workDate=defaults?.value || dateToday();
-  pendingCapture={projectId:project.id,recordId,slot:slotName,board,defaultBoard:board,applyBoard,noteMode:resolved.noteMode,workDate,workDateStatus:'unconfirmed',source:source==='camera'?'camera':'library',paste:source==='paste'};
+  pendingCapture={projectId:project.id,recordId,slot:slotName,board,defaultBoard:board,tsBoard:screenshot?resolved.board:null,applyBoard,noteMode:resolved.noteMode,workDate,workDateStatus:'unconfirmed',source:source==='camera'?'camera':'library',paste:source==='paste'};
   if(source==='paste'){
     openDialog('スマホスクリーンショットを貼り付け',`<div id="screenshotPasteArea" class="screenshot-paste-area" tabindex="0"><p>PCで画像をコピーして、この枠でCtrl+Vを押してください。</p><p class="hint">${esc(context.target.name)}の右側に保存します。画像を加工したり黒板を合成したりしません。</p></div>`,()=>{},'閉じる');
     $('screenshotPasteArea').focus();return;
@@ -751,6 +760,11 @@ async function retryPendingPhoto(){
     showProgress('写真を検証し、一時保存しています…');
     const dimensions = await validateImage(file,{signal});
     const next = clone(project);
+    let tsRead=null,tsEffect={keys:[],boardChanged:false};
+    if(capture.slot==='スマホスクリーンショット'&&getContext(next,capture.recordId).target.useCase==='TS出来形(バリアフリー)'){
+      if(!pendingPhoto.ocr){try{pendingPhoto.ocr=await readTSScreenshot(file,{signal,onProgress:showProgress});}catch(error){if(error.name==='AbortError')throw error;pendingPhoto.ocr={complete:false,values:{},missing:['X','Y','計測箇所'],message:error.message};}}
+      tsRead=pendingPhoto.ocr;tsEffect=applyTSScreenshot(next,capture.recordId,tsRead,{board:capture.tsBoard});
+    }
     if (capture.board) {
       const { record } = getContext(next, capture.recordId);
       record.boardDefaults = clone(capture.defaultBoard); record.applyBoardDefault = capture.applyBoard;record.boardNoteMode=capture.noteMode;
@@ -758,12 +772,14 @@ async function retryPendingPhoto(){
     const photo = addPhoto(next, capture.recordId, capture.slot, { originalName: file.name, type: file.type, size: file.size, ...dimensions, board: capture.board, applyBoard: capture.applyBoard, workDate:capture.workDate,workDateStatus:capture.workDateStatus,captureSource:capture.source,boardNoteMode:capture.noteMode });
     const files = new Map(originals); files.set(photo.id, file);
     const usedDraft=JSON.stringify(boardDrafts.get(capture.recordId))===JSON.stringify({board:capture.defaultBoard,applyBoard:capture.applyBoard,noteMode:capture.noteMode});
-    await persist(next, files, false, null, {clearBoardIds:usedDraft?[capture.recordId]:[]});
+    const clearReportKeys=tsEffect.keys.map(key=>`${capture.recordId}:${key}`);
+    await persist(next, files, false, null, {clearBoardIds:usedDraft||tsEffect.boardChanged?[capture.recordId]:[],clearReportKeys});
     project = next; originals = files; dirty = true;invalidateOutput();
     if (JSON.stringify(boardDrafts.get(capture.recordId)) === JSON.stringify({ board: capture.defaultBoard, applyBoard: capture.applyBoard,noteMode:capture.noteMode })) boardDrafts.delete(capture.recordId);
+    if(tsEffect.boardChanged)boardDrafts.delete(capture.recordId);clearReportKeys.forEach(key=>reportDrafts.delete(key));
     const { target, record } = getContext(project, capture.recordId);
     pendingPhoto=null;
-    notify(`${target.name} ／ ${record.category} ／ ${capture.slot} を${storage ? 'この端末へ保存' : '取り込み'}しました。原本は加工していません。`);
+    notify(`${target.name} ／ ${record.category} ／ ${capture.slot} を${storage ? 'この端末へ保存' : '取り込み'}しました。${tsRead?(tsRead.complete?'計測箇所・X・Yを調書と黒板へ反映しました。出力前に読み取り結果を確認してください。':`読取未完了：${tsRead.missing.join('・')}。読めた項目だけ反映しました。調書で確認・入力してください。${tsRead.message||''}`):'原本は加工していません。'}`,Boolean(tsRead&&!tsRead.complete));
   }));
 }
 
@@ -781,9 +797,9 @@ function captureView({group,target,record,visible}){
   if(record){
     const def=USE_CASES[target.useCase],remaining=def.categories.filter(c=>!target.records.some(r=>r.category===c));
     const tabs=record=>tabBar(target.records.map(r=>tabButton(`${def.categoryLabel}：${r.category}`,{selected:r.id===record.id,attrs:{'data-record':r.id}})).join('')+(remaining.length?button(`＋ ${def.categoryLabel}の記録を追加`,{className:'add-record',attrs:{'data-action':'add-record'}}):''),{label:def.categoryLabel,className:'record-tabs'});
-    selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title${nameDrafts.has(target.id)?' is-editing':''}">${inlineTargetName(target)}${badge(target.useCase)}${button('管理名・所属を訂正',{variant:'subtle',attrs:{'data-edit-target':target.id}})}</div><p class="hint">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">分類の区分を確認してから、写真の種類を選んでください。</p>${tabs(record)}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div></section>`;
+    selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title${nameDrafts.has(target.id)?' is-editing':''}">${inlineTargetName(target)}${renderTargetNavigation(visible,target.id)}${badge(target.useCase)}${button('管理名・所属を訂正',{variant:'subtle',attrs:{'data-edit-target':target.id}})}</div><p class="hint">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">分類の区分を確認してから、写真の種類を選んでください。</p>${tabs(record)}${target.useCase==='TS出来形(バリアフリー)'?renderTSReading(record):''}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div></section>`;
     if(target.useCase==='MMS')board='<section class="panel"><p class="hint">MMSは作業の前・後の写真を原本のまま記録します。黒板・座標・施工区間・調書入力は不要です。</p></section>';
-    else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id)});}
+    else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false,{omitPoint:isTrial(target.useCase)}),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id)});}
   }else selected=emptyState('記録対象を追加','路線を設定し、用途と管理名を指定して始めます。施工区間は任意です。',{actions:button('記録対象を追加',{variant:'primary',attrs:{'data-action':'add-targets'}})});
   return `${renderTargetTabs(allTargetModels,target?.id)}${renderCaptureProgress(summary)}<div class="capture-layout">${picker}<div class="capture-main">${selected}${board}</div></div>${record?historyPanel(record.id):''}`;
 }
@@ -1002,7 +1018,7 @@ $('app').addEventListener('submit', event => {
   const {target,record}=getContext(project,recordId);
   const noteMode=boardDrafts.get(recordId)?.noteMode||recordNoteMode(target,record);
   run(async () => {
-    if (applyBoard) boardFits(board);
+    if (applyBoard) boardFits(board,{skipPoint:isTrial(target.useCase)});
     await mutate(next => { const { record } = getContext(next, recordId); record.boardDefaults = board; record.applyBoardDefault = applyBoard;record.boardNoteMode=noteMode; }, '次回撮影用の黒板を保存しました。過去写真は変更していません。',{clearBoardIds:[recordId]});
     boardDrafts.delete(recordId);
   });
@@ -1057,6 +1073,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.previewComposed){openImagePreview(button.dataset.previewComposed,true,button);return;}
     if(button.dataset.previewCanvas){openCanvasPreview(button.dataset.previewCanvas,button);return;}
     if(button.dataset.deleteTarget){targetDeleteDialog([button.dataset.deleteTarget]);return;}
+    if(button.dataset.navigateTarget){navigateTarget(button.dataset.navigateTarget,button.dataset.targetDirection);return;}
     if(button.dataset.useCaseTab){mode='field';useCaseFilter=button.dataset.useCaseTab;onlyMissing=false;activeTargetId='';activeRecordId='';activeCaptureSlot='';render();return;}
     if(button.dataset.action==='select-all-targets'){selection().visible.forEach(t=>selectedTargetIds.add(t.id));render();return;}
     if(button.dataset.action==='clear-target-selection'){selectedTargetIds.clear();render();return;}

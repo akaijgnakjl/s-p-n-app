@@ -7,6 +7,8 @@ import { escapeHTML } from './ui/components.js';
 import { PRINT_LAYOUT_CSS } from './print/layout.js';
 import { printPage, printToolbar } from './print/components.js';
 import { yieldTask } from './task-yield.js';
+import {planControlPointReports,isControlPointPhotoPage} from './print/control-point.js';
+import {planBMReports,planTSReports,isTrialPhotoPage,isTSPhotoPage} from './print/measured-forms.js';
 export { escapeHTML } from './ui/components.js';
 
 export { OUTPUT_LIMITS } from './definitions.js';
@@ -63,8 +65,11 @@ function selectRecords(project, recordIds) {
 }
 
 function reportPages(records) {
+  if(records[0]?.useCase==='基準点'){const pages=planControlPointReports(records);if(pages)return pages;}
+  if(records[0]?.useCase==='仮BM'){const pages=planBMReports(records);if(pages)return pages;}
   if(records[0]?.useCase==='TS出来形(バリアフリー)'){
-    const pages=[];
+    const measured=planTSReports(records),pages=measured||[];
+    if(!measured){
     const groups=new Map();for(const record of records){const fields=record.record.reportFields||{},key=JSON.stringify([record.groupId,fields.surveyor,fields.standard,fields.internalStandard]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(record);}
     for(const rows of groups.values()){
       let chunk=[],height=0,continued=false;
@@ -73,6 +78,7 @@ function reportPages(records) {
         const cells=tsReportCells(row).map(tsCellLines),length=Math.max(...cells.map(cell=>cell.length));
         for(let at=0;at<length;at+=24){const part={...row,tsCells:cells.map(cell=>cell.slice(at,at+24).join('\n'))},rowHeight=tsRowHeight(part);if(chunk.length&&(chunk.length===24||height+rowHeight>96))push();chunk.push(part);height+=rowHeight;}
       }push();
+    }
     }
     const extra=records.filter(context=>Object.entries(context.record.reportFields||{}).some(([key,value])=>key==='remarks'?Boolean(value):['surveyor','standard','internalStandard'].includes(key)&&String(value).length>20));
     const lines=extra.flatMap(context=>recordDetail(context).flatMap(value=>wrapOutputText(value,53)));
@@ -177,7 +183,8 @@ function photoPages(records) {
   const pages = [];
   const byRoute=new Map();for(const row of rows){if(!byRoute.has(row.groupId))byRoute.set(row.groupId,[]);byRoute.get(row.groupId).push(row);}
   for(const routeRows of byRoute.values())for (let index = 0; index < routeRows.length; index += PHOTO_ROWS_PER_PAGE) {
-    pages.push({ kind: 'photo', title: `${records[0]?.useCase||''}写真帳`,groupName:routeRows[0].groupName, rows: routeRows.slice(index, index + PHOTO_ROWS_PER_PAGE), usedMm: Math.min(routeRows.length - index, PHOTO_ROWS_PER_PAGE) * 77 });
+    const pageRows=routeRows.slice(index,index+PHOTO_ROWS_PER_PAGE),exact=isControlPointPhotoPage(pageRows,routeRows[0].groupName),trial=isTrialPhotoPage(pageRows,routeRows[0].groupName),ts=isTSPhotoPage(pageRows);
+    pages.push({ kind: 'photo', title: `${records[0]?.useCase||''}写真帳`,referenceLayout:exact?'control-point':trial?'trial':ts?'ts-photo':undefined,groupName:routeRows[0].groupName, rows:pageRows, usedMm:exact?714.72*25.4/72:trial?752.64*25.4/72:ts?771*25.4/72:pageRows.length*77 });
   }
   return pages;
 }
@@ -210,9 +217,9 @@ export function buildOutputModel(project, { recordIds, edition = 'draft' } = {})
     const missingFields = reportMissingFields(snapshot, record.id), review = reportReviewState(snapshot, record.id);
     if (missingFields.length) issues.push(issueFor(context, 'report-incomplete', `調書の入力が残っています：${missingFields.join('、')}`, { fields: missingFields }));
     if (review !== 'reviewed') issues.push(issueFor(context, review === 'stale' ? 'report-stale' : 'report-unreviewed', review === 'stale' ? '調書を変更した後の再確認が必要です。' : '調書の内容確認が必要です。'));
-    return { recordId: record.id, targetId: target.id, targetName: target.name, useCase: target.useCase,
+    return { projectName:snapshot.name,recordId: record.id, targetId: target.id, targetName: target.name, useCase: target.useCase,
       category: record.category, groupId: target.groupId, groupLabel: groupLabel(group), record,
-      section: sectionLabel(effectiveReportSection(snapshot,record.id)), itemName: getReportItemName(snapshot, record.id), review, slots, groupName:group?.name||'路線未設定' };
+      sectionData:effectiveReportSection(snapshot,record.id),section: sectionLabel(effectiveReportSection(snapshot,record.id)), itemName: getReportItemName(snapshot, record.id), review, slots, groupName:group?.name||'路線未設定' };
   });
   if (edition === 'final' && issues.length) throw outputError('unfinished-output', `完成版には未完了の項目が${issues.length}件あります。内容を確認する場合は途中版を選択してください。`, issues);
   const pages=[];

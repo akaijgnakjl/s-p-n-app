@@ -1,5 +1,7 @@
 import { escapeHTML, button } from '../ui/components.js';
 import {printSurveyReport,printTSReport,printReferencePhotoRow} from './reference.js';
+import {printControlPointReport,printControlPointPhotos} from './control-point.js';
+import {printMeasuredPage} from './measured-forms.js';
 
 /** Markup only: page plans, line wrapping and adoption decisions belong to reports.js. */
 export const printLines = lines => lines.map(line => `<span class="text-line">${escapeHTML(line) || '&#160;'}</span>`).join('');
@@ -15,6 +17,8 @@ export function printPhotoFigure(slot, imageURLs, small = false, statusLabels) {
 }
 
 export function printPageBody(page, imageURLs, statusLabels) {
+  if(page.referenceLayout==='control-point')return page.kind==='report'?printControlPointReport(page):printControlPointPhotos(page,imageURLs,statusLabels);
+  if(['bm','trial','ts','ts-photo'].includes(page.referenceLayout))return printMeasuredPage(page,imageURLs,statusLabels);
   if(page.referenceType==='ts')return printTSReport(page);
   if(page.referenceType==='survey')return printSurveyReport(page);
   if (page.kind === 'issues') return `<div class="issue-lines">${printLines(page.lines)}</div>`;
@@ -39,5 +43,7 @@ export function printPageFooter({ number, total, continued }) {
 }
 
 export function printPage(page, { number, total, edition, projectNameLines, editionLabel, imageURLs, statusLabels }) {
+  if(['bm','trial','ts','ts-photo'].includes(page.referenceLayout))return `<article class="page page-measured page-measured-${page.referenceLayout}" data-page="${number}" data-page-kind="${page.kind}" data-use-case="${escapeHTML(page.useCase||page.rows?.[0]?.useCase||'')}">${edition==='draft'?'<div class="watermark">途中版</div>':''}<main class="page-content">${printPageBody(page,imageURLs,statusLabels)}</main></article>`;
+  if(page.referenceLayout==='control-point')return `<article class="page page-control-point" data-page="${number}" data-page-kind="${page.kind}" data-use-case="基準点">${edition==='draft'?'<div class="watermark">途中版</div>':''}<main class="page-content">${printPageBody(page,imageURLs,statusLabels)}</main></article>`;
   return `<article class="page${page.orientation==='landscape'?' page-landscape':''}${page.referenceType?' page-reference-report':''}" data-page="${number}" data-page-kind="${page.kind}" data-use-case="${escapeHTML(page.useCase||page.rows?.find(row=>row.useCase)?.useCase||'')}"${page.orientation==='landscape'?' style="page:landscape"':''}>${edition === 'draft' ? '<div class="watermark">途中版</div>' : ''}${printPageHeader({ projectNameLines, title: page.title+(page.kind==='photo'&&page.groupName&&page.groupName.length<=60?' ／ '+page.groupName:''), editionLabel })}<main class="page-content">${printPageBody(page, imageURLs, statusLabels)}</main>${printPageFooter({ number, total, continued: page.continued })}</article>`;
 }

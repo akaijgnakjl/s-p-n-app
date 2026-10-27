@@ -20,6 +20,7 @@ export function resolveCaptureBoard(project, recordId, slot, {board, noteMode} =
   if (!USE_CASES[target.useCase].slots.includes(slot)) throw new Error('この用途にない撮影枠です。');
   if (target.useCase === 'MMS') return {board:null,noteMode:'manual'};
   const result = structuredClone(board || record.boardDefaults);
+  if(isTrial(target.useCase))result.values.point='';
   const mode = noteMode || recordNoteMode(target,record);
   if (!['auto','manual'].includes(mode)) throw new Error('黒板の自動入力指定が不正です。');
   if (isTrial(target.useCase) && mode === 'auto') result.values.note = automaticNote(target.useCase,record.category,slot);

@@ -167,7 +167,7 @@ export function validateRecordReport(useCase, record) {
 
 export function reportMissingFields(project, recordId) {
   const { target, record } = getReportContext(project, recordId);
-  return USE_CASES[target.useCase].reportColumns.filter(column => !column.optional && column.key !== 'remarks' && !String(record.reportFields?.[column.key] || '').trim()).map(column => column.label);
+  return USE_CASES[target.useCase].reportColumns.filter(column => !column.optional && column.key !== 'remarks' && !(target.useCase==='TS出来形(バリアフリー)'&&column.key==='side'&&tsEmbeddedSide(record.reportFields?.station)) && !String(record.reportFields?.[column.key] || '').trim()).map(column => column.label);
 }
 
 export function reportSignature(project, recordId) {
@@ -203,10 +203,15 @@ export function tsMeasurements(fields={}){
   }catch{return null;}
 }
 
+function tsEmbeddedSide(station){return String(station??'').trim().match(/\d\s*(?:\(\s*)?([LR])\s*\)?$/i)?.[1]?.toUpperCase()||'';}
+export function tsLocationLabel(fields={},fallback=''){
+  const station=String(fields.station||fallback).trim(),side=String(fields.side||'').trim();
+  return station+(side&&tsEmbeddedSide(station)!==side.toUpperCase()?` (${side})`:'');
+}
 export function tsReportCells(context){
   if(context.tsCells)return context.tsCells;
   const f=context.record.reportFields||{},m=tsMeasurements(f);
-  return [`${f.station||context.targetName}${f.side?` (${f.side})`:''}`,f.designX,f.measuredX,m?.dx??'—',f.designY,f.measuredY,m?.dy??'—',m?.dx??'—',m?.dy??'—',m?.d??'—'].map(value=>String(value??''));
+  return [tsLocationLabel(f,context.targetName),f.designX,f.measuredX,m?.dx??'—',f.designY,f.measuredY,m?.dy??'—',m?.dx??'—',m?.dy??'—',m?.d??'—'].map(value=>String(value??''));
 }
 export function tsCellLines(value){
   return String(value).split('\n').flatMap(paragraph=>{const lines=[];let line='',width=0;for(const character of Array.from(paragraph)){const size=/[\x20-\x7e]/.test(character)&&!/[WM@%]/.test(character) ? 0.6 : 1;if(line&&width+size>7){lines.push(line);line='';width=0;}line+=character;width+=size;}lines.push(line);return lines;});

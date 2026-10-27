@@ -1,0 +1,43 @@
+/* Explicitly opted-in disclosure bodies retain their DOM/form ancestry. */
+details[data-floating] > .ui-disclosure-body.ui-floating-panel {
+  position: fixed;
+  inset: auto;
+  top: var(--ui-floating-top, 0px);
+  left: var(--ui-floating-left, 0px);
+  z-index: 1000;
+  box-sizing: border-box;
+  width: var(--ui-floating-width, 384px);
+  min-width: 0;
+  max-width: none;
+  max-height: var(--ui-floating-max-height, 560px);
+  margin: 0;
+  padding: var(--space-4);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: var(--shadow-floating);
+  text-align: start;
+}
+/* Explicit display:none wins over existing grid bodies and the popover UA rule. */
+details[data-floating] > .ui-disclosure-body.ui-floating-panel[data-floating-state="closed"] {
+  display: none !important;
+}
+details[data-floating] > .ui-disclosure-body.ui-floating-panel[data-floating-kind="menu"] {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+details[data-floating] > .ui-disclosure-body.ui-floating-panel > :first-child { margin-top: 0; }
+details[data-floating] > .ui-disclosure-body.ui-floating-panel > :last-child { margin-bottom: 0; }
+details[data-floating] > .ui-disclosure-body.ui-floating-panel::backdrop { background: transparent; pointer-events: none; }
+@media(forced-colors:active) {
+  details[data-floating] > .ui-disclosure-body.ui-floating-panel { border-color: CanvasText; box-shadow: none; }
+}
+@media print {
+  details[data-floating] > .ui-disclosure-body.ui-floating-panel { display: none !important; }
+}
+@media(max-width:760px){details[data-floating]>.ui-disclosure-body.ui-floating-panel{padding:12px}details[data-floating]>.ui-disclosure-body.ui-floating-panel[data-floating-kind="menu"]{padding:8px}.ui-floating-panel .dialog-fields{gap:10px;margin:10px 0}}

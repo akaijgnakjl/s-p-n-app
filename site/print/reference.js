@@ -1,5 +1,5 @@
 import {escapeHTML as esc} from '../ui/components.js';
-import {tsMeasurements,tsReportCells,tsCellLines,tsRowHeight} from '../report-data.js';
+import {tsMeasurements,tsReportCells,tsCellLines,tsRowHeight,tsLocationLabel} from '../report-data.js';
 
 const lines=value=>String(value??'').split('\n').map(line=>`<span>${esc(line)||'&#160;'}</span>`).join('');
 const value=(fields,key)=>String(fields?.[key]??'');
@@ -25,7 +25,7 @@ export function printTSReport(page){
 
 export function printReferencePhotoRow(row,urls,labels){
   const f=row.fields||{},ts=row.useCase==='TS出来形(バリアフリー)';
-  if(ts){const m=tsMeasurements(f);return `<section class="photo-row ts-photo-row" data-record-id="${esc(row.recordId)}"><header>縁石工　延長（偏心量）<br>計測箇所：${esc(f.station||row.targetName)}${f.side?` (${esc(f.side)})`:''}<br>偏心：X=${m?m.dx:'—'}mm　Y=${m?m.dy:'—'}mm　D=${m?m.d:'—'}mm</header><div class="ts-photo-pair"><figure>${image(row.slots[0],urls,labels)}</figure><figure>${image(row.slots[1],urls,labels)}</figure></div></section>`;}
+  if(ts){const m=tsMeasurements(f);return `<section class="photo-row ts-photo-row" data-record-id="${esc(row.recordId)}"><header>縁石工　延長（偏心量）<br>計測箇所：${esc(tsLocationLabel(f,row.targetName))}<br>偏心：X=${m?m.dx:'—'}mm　Y=${m?m.dy:'—'}mm　D=${m?m.d:'—'}mm</header><div class="ts-photo-pair"><figure>${image(row.slots[0],urls,labels)}</figure><figure>${image(row.slots[1],urls,labels)}</figure></div></section>`;}
   const bm=row.useCase==='仮BM',point=row.useCase==='基準点',trial=['現密','コア密'].includes(row.useCase);
   const caption=point?`${row.targetName}\n${value(f,'kind')}\nX=${value(f,'x')}\nY=${value(f,'y')}\nH=${value(f,'height')}`:bm?`${row.targetName}\n${value(f,'remarks')}\nH=${value(f,'height')}`:row.useCase==='現密'?`現場密度試験\n${row.category}\n${row.slots[0].name}\n${value(f,'material')}`:`切取供試体密度試験\n${row.slots[0].name}\n${value(f,'material')||row.category}`;
   return `<section class="photo-row photo-primary reference-photo" data-record-id="${esc(row.recordId)}"><div class="photo-main"><figure>${image(row.slots[0],urls,labels)}</figure></div><div class="photo-data"><div class="ref-photo-number">${point?'管理No':'写真NO'}　${row.number}</div><div class="ref-station">測点　${esc(point?row.targetName:value(f,'station'))}${bm&&f.position?` (${esc(f.position)})`:''}</div><div class="ref-caption-label">${point?'点名・種類・座標':bm?'観察・所見':'試験状況'}</div><div class="ref-caption">${lines(caption)}</div>${row.paired?`<figure class="ref-near">${image(row.slots[1],urls,labels)}</figure>`:trial&&f.result?`<div class="ref-result">測定値：${esc(f.result)}${f.remarks?`<br>${esc(f.remarks)}`:''}</div>`:''}</div></section>`;

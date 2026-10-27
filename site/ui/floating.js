@@ -109,7 +109,9 @@ export function createFloatingDisclosures({ root = globalThis.document, selector
     if (!available(entry)) { closeEntry(entry); return; }
     const viewport = visibleViewport(), anchor = trigger(entry).getBoundingClientRect();
     const kind = Object.hasOwn(FLOATING_SIZES, entry.details.dataset.floating) ? entry.details.dataset.floating : 'panel';
-    const size = FLOATING_SIZES[kind], width = Math.min(size.width, Math.max(1, viewport.width - 2 * margin));
+    const base = FLOATING_SIZES[kind], mobile=media?media.matches:win.innerWidth<=760;
+    const size = mobile ? {width:Math.min(base.width,kind==='menu'?224:360),height:Math.min(base.height,viewport.height*.62)} : base;
+    const width = Math.min(size.width, Math.max(1, viewport.width - 2 * margin));
     entry.body.setAttribute('data-floating-kind', kind);
     entry.body.style.setProperty('--ui-floating-width', `${width}px`);
     entry.body.style.setProperty('--ui-floating-max-height', `${Math.min(size.height, Math.max(1, viewport.height - 2 * margin))}px`);
