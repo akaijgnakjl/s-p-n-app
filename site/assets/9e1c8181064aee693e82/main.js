@@ -289,15 +289,15 @@ function reviewDatesDialog(ids = null) {
   },'一覧の日付を確認済みにする');
 }
 
-function field(label,name,value='',{type='text',max=300,required=true,multiline=false}={}){
-  return (multiline?textareaField:textField)(label,{name,value,type,max,required});
+function field(label,name,value='',{type='text',max=300,required=true,multiline=false,attrs={}}={}){
+  return (multiline?textareaField:textField)(label,{name,value,type,max,required,attrs});
 }
 
-function boardFields(board, applyBoard = true, choices = true, {omitPoint=false}={}) {
+function boardFields(board, applyBoard = true, choices = true, {omitPoint=false,fixedTS=false}={}) {
   const template = BOARD_TEMPLATES[board.templateId];
   const fields=template.fields.filter(item=>!omitPoint||item.key!=='point');
   const visibleKeys = new Set(fields.map(item => item.key));
-  return `${choices?renderBoardChoices(board.templateId):''}${selectField('黒板の形式',optionItems(Object.values(BOARD_TEMPLATES).filter(item=>item.id!=='legacy-simple'||board.templateId===item.id).map(item=>[item.id,item.name]),board.templateId),{name:'templateId'})}${fields.map(item => field(item.label, `board-${item.key}`, board.values[item.key], {type:item.type || 'text',max:1000,required:applyBoard && !item.optional,multiline:!!item.large})).join('')}${BOARD_FIELD_KEYS.filter(key => !visibleKeys.has(key)).map(key => `<input type="hidden" name="board-${key}" value="${esc(omitPoint&&key==='point'?'':board.values[key])}">`).join('')}${board.legacyColor?`<input type="hidden" name="legacyColor" value="${esc(board.legacyColor)}">`:''}`;
+  return `${choices?renderBoardChoices(board.templateId):''}${selectField('黒板の形式',optionItems(Object.values(BOARD_TEMPLATES).filter(item=>item.id!=='legacy-simple'||board.templateId===item.id).map(item=>[item.id,item.name]),board.templateId),{name:'templateId'})}${fields.map(item => field(item.label, `board-${item.key}`, board.values[item.key], {type:item.type || 'text',max:1000,required:applyBoard && !item.optional,multiline:!!item.large,attrs:{readonly:fixedTS&&['workType','remarks'].includes(item.key)}})).join('')}${BOARD_FIELD_KEYS.filter(key => !visibleKeys.has(key)).map(key => `<input type="hidden" name="board-${key}" value="${esc(omitPoint&&key==='point'?'':board.values[key])}">`).join('')}${board.legacyColor?`<input type="hidden" name="legacyColor" value="${esc(board.legacyColor)}">`:''}`;
 }
 
 function readBoard(form) {
@@ -799,7 +799,7 @@ function captureView({group,target,record,visible}){
     const tabs=record=>tabBar(target.records.map(r=>tabButton(`${def.categoryLabel}：${r.category}`,{selected:r.id===record.id,attrs:{'data-record':r.id}})).join('')+(remaining.length?button(`＋ ${def.categoryLabel}の記録を追加`,{className:'add-record',attrs:{'data-action':'add-record'}}):''),{label:def.categoryLabel,className:'record-tabs'});
     selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title${nameDrafts.has(target.id)?' is-editing':''}">${inlineTargetName(target)}${renderTargetNavigation(visible,target.id)}${badge(target.useCase)}${button('管理名・所属を訂正',{variant:'subtle',attrs:{'data-edit-target':target.id}})}</div><p class="hint">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">分類の区分を確認してから、写真の種類を選んでください。</p>${tabs(record)}${target.useCase==='TS出来形(バリアフリー)'?renderTSReading(record):''}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div></section>`;
     if(target.useCase==='MMS')board='<section class="panel"><p class="hint">MMSは作業の前・後の写真を原本のまま記録します。黒板・座標・施工区間・調書入力は不要です。</p></section>';
-    else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false,{omitPoint:isTrial(target.useCase)}),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id)});}
+    else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false,{omitPoint:isTrial(target.useCase),fixedTS:target.useCase==='TS出来形(バリアフリー)'}),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id)});}
   }else selected=emptyState('記録対象を追加','路線を設定し、用途と管理名を指定して始めます。施工区間は任意です。',{actions:button('記録対象を追加',{variant:'primary',attrs:{'data-action':'add-targets'}})});
   return `${renderTargetTabs(allTargetModels,target?.id)}${renderCaptureProgress(summary)}<div class="capture-layout">${picker}<div class="capture-main">${selected}${board}</div></div>${record?historyPanel(record.id):''}`;
 }

@@ -1,4 +1,5 @@
 import { getContext, USE_CASES } from './model.js';
+import {tsCaptureBoard} from './ts-board.js';
 
 export const isTrial = useCase => ['現密','コア密'].includes(useCase);
 export function automaticNote(useCase, category, slot = '') {
@@ -16,10 +17,11 @@ export function recordNoteMode(target, record) {
 }
 
 export function resolveCaptureBoard(project, recordId, slot, {board, noteMode} = {}) {
-  const {target,record} = getContext(project,recordId);
+  const {target,record,group} = getContext(project,recordId);
   if (!USE_CASES[target.useCase].slots.includes(slot)) throw new Error('この用途にない撮影枠です。');
   if (target.useCase === 'MMS') return {board:null,noteMode:'manual'};
-  const result = structuredClone(board || record.boardDefaults);
+  let result = structuredClone(board || record.boardDefaults);
+  if(target.useCase==='TS出来形(バリアフリー)')result=tsCaptureBoard(result,{route:group?.kind==='路線'?group.name:'',station:record.reportFields.station||result.values.location||(/^SP\s*\d/i.test(target.name)?target.name:'')});
   if(isTrial(target.useCase))result.values.point='';
   const mode = noteMode || recordNoteMode(target,record);
   if (!['auto','manual'].includes(mode)) throw new Error('黒板の自動入力指定が不正です。');

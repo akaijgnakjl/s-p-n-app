@@ -224,13 +224,13 @@ function drawReferenceBoard(ctx, x, y, width, height, board) {
   const overflowFields = [];
   ctx.save();
   ctx.drawImage(image, x, y, width, height);
-  const drawRegion = (region, keys) => {
-    const text = keys.map(key => boardText(key, board.values[key])).filter(Boolean).join('\n');
+  const drawRegion = (region, keys, textOverride, singleLine=false) => {
+    const text = textOverride ?? keys.map(key => boardText(key, board.values[key])).filter(Boolean).join('\n');
     if (!text) return;
     const bx = x + width * region.x / 100, by = y + height * region.y / 100;
     const bw = width * region.w / 100, bh = height * region.h / 100;
     const maximum = width * region.font / 100, minimum = Math.min(maximum, Math.max(1, width / 200));
-    const plan = fitReferenceText(ctx, text, bw, bh, maximum, minimum, width / 1200);
+    const plan = fitReferenceText(ctx, text, bw, bh, maximum, minimum, width / 1200, singleLine);
     if (!plan.fits) overflowFields.push(...keys.filter(key => board.values[key]));
     ctx.save();
     ctx.beginPath(); ctx.rect(bx, by, bw, bh); ctx.clip();
@@ -241,7 +241,14 @@ function drawReferenceBoard(ctx, x, y, width, height, board) {
     plan.lines.forEach((line, index) => ctx.fillText(line, tx, firstY + index * plan.lineHeight));
     ctx.restore();
   };
-  for (const [key, region] of Object.entries(layout.fields)) drawRegion(region, [key]);
+  const tsRemarks=board.templateId==='sample-2112'&&board.values.workType==='縁石工'&&board.values.remarks===`路線名：${board.values.route}\n\n延長（偏心量）\n\n出来形計測状況`;
+  for (const [key, region] of Object.entries(layout.fields)) {
+    if(key==='remarks'&&tsRemarks){
+      const lines=[`路線名：${board.values.route}`,'延長（偏心量）','出来形計測状況'];
+      const bands=[[29,16],[55,16],[84,13]];
+      lines.forEach((text,index)=>drawRegion({...region,y:bands[index][0],h:bands[index][1]},[key],text,true));
+    }else drawRegion(region, [key]);
+  }
   if (layout.stack) drawRegion(layout.stack, layout.stack.keys);
   if (overflowFields.length) {
     ctx.strokeStyle = '#ffbc72'; ctx.lineWidth = Math.max(2, width / 150);
@@ -255,10 +262,10 @@ function drawReferenceBoard(ctx, x, y, width, height, board) {
   return { overflow: overflowFields.length > 0, overflowFields: [...new Set(overflowFields)] };
 }
 
-function fitReferenceText(ctx, text, width, height, maximum, minimum, step) {
+function fitReferenceText(ctx, text, width, height, maximum, minimum, step, singleLine=false) {
   for (let font=maximum; ; font=Math.max(minimum,font-step)) {
     ctx.font=`${font}px sans-serif`;
-    const lines=wrapText(ctx,text,width),lineHeight=font*1.18;
+    const lines=singleLine?[text]:wrapText(ctx,text,width),lineHeight=font*1.18;
     const fits=lines.length*lineHeight<=height&&lines.every(line=>ctx.measureText(line).width<=width);
     if(fits||font===minimum)return {lines,font,lineHeight,fits};
   }
