@@ -34,8 +34,11 @@ export function planControlPointReports(records){
   for(const rows of groups.values())for(let at=0;at<rows.length;at+=10){const first=rows[0];pages.push({kind:'report',useCase:'基準点',title:'基準点設置箇所',columns:[{key:'name',label:'点名'},...USE_CASES.基準点.reportColumns],referenceLayout:'control-point',groupName:first.groupName,itemName:first.itemName,section:first.section,sectionData:first.sectionData,continued:at>0,usedMm:mm(682.08),entries:rows.slice(at,at+10).map(context=>({kind:'row',recordId:context.recordId,targetId:context.targetId,heightMm:mm(51.96),cells:reportValues(context).map(value=>controlPointLines(value))}))});}
   return pages;
 }
-function photoLines(row){const f=row.fields||{};return [row.targetName,f.kind||'—',`X=${f.x||'—'}`,`Y=${f.y||'—'}`,`H=${f.height||'—'}`].flatMap(value=>controlPointLines(value,140,8.28));}
-export function isControlPointPhotoPage(rows,groupName){return rows.length>0&&rows.every(row=>row.kind==='photo-row'&&row.useCase==='基準点'&&row.referencePhoto&&photoLines(row).length<=7)&&controlPointLines(`路線名:${groupName}`,292,9.24).length===1;}
+function photoLines(row){const f=row.fields||{};return (row.useCase==='仮BM'?[f.remarks||'',`H=${f.height||'—'}`]:[row.targetName,f.kind||'—',`X=${f.x||'—'}`,`Y=${f.y||'—'}`,`H=${f.height||'—'}`]).flatMap(value=>controlPointLines(value,140,8.28));}
+// 仮BMの見本は測点からSPを外し、位置を括弧で続ける（例：-1.1(中央　分離帯)）。
+function bmStation(row){const f=row.fields||{},station=String(f.station||'').trim().replace(/^SP\s*/i,''),position=String(f.position||'').trim().replace(/\s*\n\s*/g,'　');return station+(position?`(${position})`:'');}
+const bmFits=row=>[bmStation(row),String(row.fields?.photoLine||'')].every(value=>controlPointLines(value,100,8.28).length===1);
+export function isControlPointPhotoPage(rows,groupName){const useCase=rows[0]?.useCase;return rows.length>0&&['基準点','仮BM'].includes(useCase)&&rows.every(row=>row.kind==='photo-row'&&row.useCase===useCase&&row.referencePhoto&&photoLines(row).length<=7&&(useCase!=='仮BM'||bmFits(row)))&&controlPointLines(`路線名:${groupName}`,292,9.24).length===1;}
 
 const text=(x,y,value,size=13.98,anchor='middle',extra='')=>`<text x="${x}" y="${y}" font-size="${size}" text-anchor="${anchor}" ${extra}>${esc(value)}</text>`;
 const line=(x1,y1,x2,y2,width=.06)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#000" stroke-width="${width}"/>`;
@@ -68,21 +71,25 @@ function photo(slot,urls,labels,x,y,width,height){
   return `<div class="control-photo-empty" style="${style}">${esc(labels[slot?.status]||'未撮影')}${slot?.reason?`<br>${esc(slot.reason)}`:''}</div>`;
 }
 export function printControlPointPhotos(page,urls,labels){
-  let body=text(79.08,65.64,`路線名:${page.groupName}`,9.24,'start')+text(379.323,65.64,'状況写真：基準点設置箇所',9.24,'start'),images='';
+  // 仮BMは基準点と同じ枠で、見本どおり写真NO・測点（＋任意の欄）・観察・所見を置く。
+  const bm=page.rows[0]?.useCase==='仮BM';
+  let body=text(79.08,65.64,`路線名:${page.groupName}`,9.24,'start')+text(379.323,65.64,`状況写真：${bm?'仮BM':'基準点'}設置箇所`,9.24,'start'),images='';
   body+=rect(77.04,72,.84,714.72)+rect(531,72.84,.84,713.88)+rect(377.28,72.84,.84,713.88);
   for(let index=0;index<=3;index++)body+=rect(77.88,72+237.96*index,453.96,.84);
   for(let index=0;index<3;index++){
     const top=237.96*index;
     for(const y of [90.72,128.16])body+=rect(378.12,y+top,153.72,.84);
     for(const y of [149.16,222.48])body+=rect(378.12,y+top,152.88,.12);
-    body+=text(454.924,141.96+top,'点名・種類・座標',8.28);
+    body+=text(454.924,141.96+top,bm?'観察・所見':'点名・種類・座標',8.28);
+    if(bm)body+=text(389.28,84.84+top,'写真NO',8.28,'start')+text(381.6,101.6+top,'測点',8.28,'start');
     const row=page.rows[index];if(!row)continue;
-    body+=`<g data-record-id="${esc(row.recordId)}">`+text(389.28,84.84+top,'管理No',8.28,'start')+text(428.52,84.84+top,row.number,8.28,'start');
-    const values=photoLines(row),first=188.879-(values.length-1)*9.3597/2;
+    body+=`<g data-record-id="${esc(row.recordId)}">`+(bm?'':text(389.28,84.84+top,'管理No',8.28,'start'))+text(428.52,84.84+top,row.number,8.28,'start');
+    if(bm)body+=text(428.52,101.6+top,bmStation(row),8.28,'start')+text(428.52,120.3+top,row.fields?.photoLine||'',8.28,'start');
+    const values=photoLines(row),first=(bm?186.8:188.879)-(values.length-1)*9.3597/2;
     body+=values.map((value,i)=>text(454.924,first+i*9.3597+top,value,8.28)).join('')+'</g>';
     const nearX=index===1?400.68:397.56,nearY=index===1?226.08:226.32;
     body+=rect(81.36,85.68+top,293.4,210.24)+rect(nearX,nearY+top,112.92,80.88);
     images+=photo(row.slots[0],urls,labels,81.72,86.04+top,292.68,209.52)+photo(row.slots[1],urls,labels,nearX+.36,nearY+.36+top,112.2,80.16);
   }
-  return `<div class="control-point-sheet">${svg('基準点写真帳の3段配置',body)}${images}</div>`;
+  return `<div class="control-point-sheet">${svg(`${bm?'仮BM':'基準点'}写真帳の3段配置`,body)}${images}</div>`;
 }

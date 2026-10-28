@@ -94,7 +94,7 @@ function reportPages(records) {
   }
   const pages = [];
   for (const rows of groups.values()) {
-    const first = rows[0], columns = visibleReportColumns(first.useCase);
+    const first = rows[0], columns = visibleReportColumns(first.useCase).filter(column => !column.photoOnly);
     let page, groupPage = 0;
     const newPage = (repeatContext = false) => {
       page = { kind: 'report', title: `${first.useCase}調書（簡易様式）`, useCase: first.useCase,
