@@ -96,6 +96,14 @@ body:not(.has-project) footer { max-width:640px; padding-inline:0; text-align:le
 .target-nav-current small { color:var(--muted); font-size:12px; }
 .target-nav-current strong { overflow:hidden; font-size:16px; text-overflow:ellipsis; white-space:nowrap; }
 @media (max-width:480px) { .target-navigation { gap:var(--space-1); } .target-navigation .target-nav-arrow { padding:var(--space-1) var(--space-2); font-size:13px; } .target-nav-icon { font-size:18px; } }
+/* 縦向き写真の強い警告 */
+.portrait-warning { margin-bottom:var(--space-3); padding:var(--space-3) var(--space-4); border:3px solid #b3261e; border-radius:var(--control-radius); background:#fde7e5; color:#7a1712; }
+.portrait-warning strong { display:block; margin-bottom:var(--space-2); font-size:18px; }
+.portrait-warning p { margin:0 0 var(--space-2); color:#7a1712; font-size:15px; line-height:1.6; }
+.portrait-warning .portrait-warning-target { margin:0; font-weight:700; }
+#retakePortrait { min-height:52px; font-size:17px; font-weight:700; }
+#dialogSubmit.portrait-accept { background:var(--paper); border-color:var(--border); color:var(--muted); font-weight:400; }
+.slot-portrait-warning { margin:var(--space-2) 0; padding:var(--space-2) var(--space-3); border:2px solid #b3261e; border-radius:var(--control-radius); background:#fde7e5; color:#7a1712; font-size:14px; font-weight:700; line-height:1.5; }
 .header-tools { display:flex; align-items:center; gap:var(--space-2); }
 .header-tools .button { min-height:36px; padding-inline:var(--space-3); }
 .header-tools #helpToggle[aria-pressed="true"] { background:var(--brand-soft); border-color:var(--brand-line); }
