@@ -20,10 +20,14 @@ export function renderTargetPicker({targets,selectedId,selectedName,useCaseFilte
 }
 
 /** Navigation follows the visible route/use/missing filters, without changing them. */
-export function renderTargetNavigation(targets,selectedId){
-  const index=targets.findIndex(t=>t.id===selectedId);
-  const arrow=(step,label)=>{const target=index>=0?targets[index+step]:null;return button(step<0?'←':'→',{className:'target-nav-arrow',attrs:{'data-navigate-target':target?.id,'data-target-direction':step<0?'previous':'next','data-unavailable':!target?'true':undefined,'aria-label':target?`${label}の対象：${target.name}`:`${label}の対象`,disabled:!target,title:target?.name}});};
-  return `<nav class="target-navigation" aria-label="記録対象の前後移動">${arrow(-1,'前')}${arrow(1,'次')}</nav>`;
+// 「◀ 前へ ｜ 今の撮影対象 ｜ 次へ ▶」の3段組。撮影枠の上と下で同じものを使う。
+export function renderTargetNavigation(targets,selectedId,{placement='top'}={}){
+  const index=targets.findIndex(t=>t.id===selectedId),current=targets[index];
+  const arrow=(step,label)=>{const target=index>=0?targets[index+step]:null,prev=step<0;
+    const body=prev?`<span class="target-nav-icon" aria-hidden="true">◀</span><span class="target-nav-text"><b>前へ</b><small>${esc(target?.name||'なし')}</small></span>`:`<span class="target-nav-text"><b>次へ</b><small>${esc(target?.name||'なし')}</small></span><span class="target-nav-icon" aria-hidden="true">▶</span>`;
+    return button(body,{html:true,className:`target-nav-arrow ${prev?'is-prev':'is-next'}`,attrs:{'data-navigate-target':target?.id,'data-target-direction':prev?'previous':'next','data-unavailable':!target?'true':undefined,'aria-label':target?`${label}の記録対象：${target.name}`:`${label}の記録対象はありません`,disabled:!target,title:target?.name}});};
+  const now=`<div class="target-nav-current"><small>今の撮影対象${index>=0?` ${index+1} / ${targets.length}`:''}</small><strong>${esc(current?.name||'—')}</strong></div>`;
+  return `<nav class="target-navigation is-${placement}" aria-label="記録対象の前後移動">${arrow(-1,'前')}${now}${arrow(1,'次')}</nav>`;
 }
 
 export function renderTSReading(record){const fields=record.reportFields||{},m=tsMeasurements(fields);return `<div class="next-date-panel ts-reading"><strong>スクリーンショットの読取結果</strong><p>計測箇所：${esc(tsLocationLabel(fields)||'未読取')}</p><p>X=${m?.dx??'—'}mm ／ Y=${m?.dy??'—'}mm ／ D=${m?.d??'—'}mm</p><p class="hint">BACK→X、LEFT／RIGHT→Yです。画像と見比べて調書を確認してください。</p>${button('調書で確認・訂正',{attrs:{'data-go-report':record.id}})}</div>`;}
