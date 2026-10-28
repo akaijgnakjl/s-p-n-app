@@ -25,7 +25,7 @@ import {createSession,sanitizeSession} from './session-state.js';
 import {createSessionSaver} from './session-save.js';
 import {detailHero,detailSection,renderDateDetails,photoTimeline,photoPagination} from './ui/photo-detail.js';
 import {renderTargetPicker,renderTargetTabs,renderPhotoSlot,renderBoardPanel,renderHistoryPanel,renderCaptureProgress,renderBoardChoices,renderTargetNavigation,renderTSReading} from './ui/field-view.js';
-import {renderProjectHeader,renderCapacity,renderNextDate,renderInitialView,renderProjectSetupFields,renderHandoff} from './ui/project-view.js';
+import {renderProjectHeader,renderCapacity,renderNextDate,renderInitialView,renderProjectSetupFields,renderHandoff,renderFinishWork} from './ui/project-view.js';
 import {mountAppShell} from './ui/shell.js';
 import {createNotifications} from './ui/notifications.js';
 import {createFloatingDisclosures} from './ui/floating.js';
@@ -159,6 +159,8 @@ function showProgress(message) {
 function updateDisabled() {
   document.querySelectorAll('button,input,select,textarea').forEach(control => { control.disabled = control.matches('[data-notification-dismiss]') ? false : busy || control.dataset.unavailable === 'true'; });
   $('exportPackage').disabled = busy || !project;
+  // ZIP受け渡しでは保存の入口を「作業の終了」だけにする。
+  $('exportPackage').hidden = Boolean(project) && mode==='handoff';
   $('cancelOperation').disabled=!activeOperation;
   $('cancelOperation').hidden=!activeOperation;
 }
@@ -845,11 +847,11 @@ function captureView({group,target,record,visible}){
   if(record){
     const def=USE_CASES[target.useCase],remaining=def.categories.filter(c=>!target.records.some(r=>r.category===c));
     const tabs=record=>tabBar(target.records.map(r=>tabButton(`${def.categoryLabel}：${r.category}`,{selected:r.id===record.id,attrs:{'data-record':r.id}})).join('')+(remaining.length?button(`＋ ${def.categoryLabel}の記録を追加`,{className:'add-record',attrs:{'data-action':'add-record'}}):''),{label:def.categoryLabel,className:'record-tabs'});
-    selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title${nameDrafts.has(target.id)?' is-editing':''}">${inlineTargetName(target)}${renderTargetNavigation(visible,target.id)}${badge(target.useCase)}${button('管理名・所属を訂正',{variant:'subtle',attrs:{'data-edit-target':target.id}})}</div><p class="hint keep">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">区分を確認してから写真の種類を選んでください。</p>${tabs(record)}${target.useCase==='TS出来形(バリアフリー)'?renderTSReading(record):''}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div></section>`;
+    selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title${nameDrafts.has(target.id)?' is-editing':''}">${inlineTargetName(target)}${badge(target.useCase)}${button('管理名・所属を訂正',{variant:'subtle',attrs:{'data-edit-target':target.id}})}</div>${renderTargetNavigation(visible,target.id,{placement:'top'})}<p class="hint keep">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">区分を確認してから写真の種類を選んでください。</p>${tabs(record)}${target.useCase==='TS出来形(バリアフリー)'?renderTSReading(record):''}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div>${renderTargetNavigation(visible,target.id,{placement:'bottom'})}</section>`;
     if(target.useCase==='MMS')board='<section class="panel"><p class="hint">MMSは作業前後の写真を原本のまま記録します。黒板・座標・施工区間・調書は不要です。</p></section>';
     else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false,{omitPoint:isTrial(target.useCase),fixedTS:target.useCase==='TS出来形(バリアフリー)'}),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id)});}
   }else selected=emptyState('記録対象を追加','用途と管理名を指定して登録します。施工区間は任意です。',{actions:button('記録対象を追加',{variant:'primary',attrs:{'data-action':'add-targets'}})});
-  return `${renderCaptureProgress(summary)}<div class="capture-layout">${picker}<div class="capture-main">${selected}${board}</div></div>${record?historyPanel(record.id):''}`;
+  return `${renderCaptureProgress(summary)}<div class="capture-layout">${picker}<div class="capture-main">${selected}${board}</div></div>${record?historyPanel(record.id):''}${renderFinishWork()}`;
 }
 function slotHTML(record,slot){
   const photo=getSlotState(project,record.id,slot.name).photo,def=USE_CASES[getContext(project,record.id).target.useCase];

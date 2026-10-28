@@ -148,7 +148,7 @@ export function upgradeProject(raw) {
   const result = { ...rest, schemaVersion: 2, appVersion: '0.2.0', groups, targets, photos }; validateProject(result); return result;
 }
 
-export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.9.4', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
+export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.9.5', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
 export function addGroup(project, { kind, name } = {}) {
   validateProject(project); if (!GROUP_KINDS.includes(kind)) fail('グループの種類を選択してください'); const value = inputName(name, 'グループ名'); if (project.groups.length >= LIMITS.groups) fail('グループは50以内にしてください'); if (project.groups.some(group => group.kind === kind && normalizedName(group.name.trim()) === normalizedName(value))) fail('同じ種類に同名のグループがあります');
   const group = { id: uid(), kind, name: value }; project.groups.push(group); project.updatedAt = now(); return group;
