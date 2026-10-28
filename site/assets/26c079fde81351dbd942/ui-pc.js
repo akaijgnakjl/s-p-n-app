@@ -3,6 +3,7 @@ import { LIMITS, OUTPUT_LIMITS } from './definitions.js';
 import {formatBytes} from './limits.js';
 import { reportReviewState, reportMissingFields, sectionLabel, getReportItemName, effectiveReportSection,visibleReportColumns } from './report-data.js';
 import { buildOutputModel } from './reports.js';
+import { TS_COMMON_KEYS } from './workflow.js';
 import { escapeHTML as esc, attrs, button, actions, textareaField, selectField, checkbox, disclosure, panelHeading, badge, notice, tabButton, tabBar, emptyState } from './ui/components.js';
 
 const reviewLabels = { reviewed: '入力確認済み', unreviewed: '未確認', stale: '要再確認' };
@@ -41,7 +42,13 @@ export function renderReportView(project, { groupId = '__all__', useCase = '基�
     const recordControls = button('この記録の入力を確認', { attrs: { 'data-review-record': record.id } });
     return `<tr><th scope="row">${esc(target.name)}<small>${esc(record.category)}<br>項目名：${esc(getReportItemName(project, record.id))}<br>${esc(group ? `${group.kind}：${group.name}` : '工事直下')}</small></th>${cells}<td>${badge(editing ? '編集中' : reviewLabels[state], { tone: state === 'reviewed' && !editing ? 'success' : 'warning' })}${missing.length ? `<p class="hint">未入力：${esc(missing.join('、'))}</p>` : ''}${recordControls}<p class="hint">${esc(sectionLabel(effectiveReportSection(project,record.id)) || '施工区間は未設定です。写真と調書の必須条件ではありません。')}</p></td></tr>`;
   }).join('');
-  const routeSections=project.groups.filter(g=>groupId==='__all__'||g.id===groupId).map(g=>`<section class="route-section-panel"><strong>路線：${esc(g.name)}</strong><p>${esc(sectionLabel(g.reportSection)||'施工区間は未設定です。')}</p>${button('路線の施工区間を設定',{attrs:{'data-route-section':g.id}})}</section>`).join('');
+  // 未設定は赤、設定済みは緑。TS出来形では測定者・規格値の一括入力も同じ色分けで並べる。
+  const statusButton=(label,done,attributes)=>button(`${done?'✓ 設定済み：':'未設定：'}${label}`,{className:`route-status-button ${done?'is-done':'is-missing'}`,attrs:attributes});
+  const routeSections=project.groups.filter(g=>groupId==='__all__'||g.id===groupId).map(g=>{
+    const ts=useCase==='TS出来形(バリアフリー)'?scopedRecords(project,g.id,useCase):[];
+    const tsDone=ts.length>0&&ts.every(({record})=>TS_COMMON_KEYS.every(key=>String(record.reportFields?.[key]||'').trim()));
+    return `<section class="route-section-panel"><strong>路線：${esc(g.name)}</strong><p>${esc(sectionLabel(g.reportSection)||'施工区間は未設定です。')}</p>${actions(statusButton('路線の施工区間を設定',Boolean(g.reportSection),{'data-route-section':g.id})+(ts.length?statusButton('測定者・規格値・社内規格値を一括入力',tsDone,{'data-ts-common':g.id}):''),{className:'route-status-actions'})}</section>`;
+  }).join('');
   return `${heading}${routeSections}${controls}<p id="reportEditStatus" class="hint" role="status">${drafts.size ? '未保存の編集があります。保存・入力確認・ZIP保存時に確定します。' : '保存済みの入力を表示しています。'}</p><div class="report-table-wrap"><table class="report-input-table"><thead><tr><th>対象・${esc(definition.categoryLabel)}</th>${columns.map(column => `<th>${esc(column.label)}</th>`).join('')}<th>確認・任意設定</th></tr></thead><tbody>${tableRows}</tbody></table></div><p class="hint ui-section-note">座標・高さは簡易入力欄です。試験計算・合否判定は行いません。備考は任意です。</p></section>`;
 }
 

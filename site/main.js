@@ -8,7 +8,7 @@ import { materialChoices } from './materials.js';
 import {exportPhotos} from './photo-export.js';
 import {readTSScreenshot} from './ts-screenshot.js';
 import {applyTSScreenshot} from './ts-screenshot-data.js';
-import {setRouteSection,describeTargetDeletion,deleteTargets} from './workflow.js';
+import {setRouteSection,describeTargetDeletion,deleteTargets,setTSCommonFields,TS_COMMON_KEYS} from './workflow.js';
 import {relinkBoardDrafts} from './board-link.js';
 import { openStorage } from './storage.js';
 import { exportWorkPackage, importWorkPackage, PACKAGE_LIMITS } from './package.js';
@@ -472,6 +472,20 @@ function routeSectionDialog(groupId){
   const s=group.reportSection||{};
   openDialog('路線の施工区間',`<p>${esc(group.name)}の調書・写真帳で共通に使います。</p><div class="dialog-fields">${checkbox('施工区間を記載する',{name:'enabled',checked:group.reportSection!==null})}${field('起点 m','start',s.start||'',{required:false})}${field('終点 m','end',s.end||'',{required:false})}${field('不施工区間長 m','excluded',s.excluded||'',{required:false})}${selectField('測点の表示',options(STATION_NOTATIONS,s.notation||'SP'),{name:'notation'})}${field('自由入力の測点名','custom',s.custom||'',{required:false,max:30})}<p id="sectionCalculation" class="hint"></p></div>`,data=>mutate(next=>setRouteSection(next,groupId,data.get('enabled')==='on'?{start:data.get('start').trim(),end:data.get('end').trim(),excluded:data.get('excluded').trim(),notation:data.get('notation'),custom:data.get('custom').trim()}:null),'路線の施工区間を保存しました。'));
   $('editorForm').oninput=()=>{const f=$('editorForm'),r=constructionSection(f.elements.start.value,f.elements.end.value,f.elements.excluded.value);$('sectionCalculation').textContent=r.error||(r.complete?`工事延長 L = ${r.length} m`:'起点・終点を入力してください。');};
+}
+
+function tsCommonDialog(groupId){
+  const group=project.groups.find(g=>g.id===groupId);
+  if(!group)throw new Error('一括入力する路線を選んでください。');
+  const records=project.targets.filter(t=>t.groupId===groupId&&t.useCase==='TS出来形(バリアフリー)').flatMap(t=>t.records);
+  // 既に入力済みの値があれば初期値に使う（記録ごとに違う場合は最初に見つかった値）。
+  const initial=key=>records.map(r=>String(r.reportFields?.[key]||'').trim()).find(Boolean)||'';
+  openDialog('測定者・規格値・社内規格値を一括入力',`<p>${esc(group.name)}のTS出来形 ${records.length}記録すべてに同じ値を入れます。各記録に入力済みの値は上書きします。</p><div class="dialog-fields">${field('測定者','surveyor',initial('surveyor'),{required:false})}${field('規格値 mm','standard',initial('standard'),{required:false})}${field('社内規格値 mm','internalStandard',initial('internalStandard'),{required:false})}</div><p class="hint">調書の表で記録ごとに変更することもできます。</p>`,async data=>{
+    const values=Object.fromEntries(TS_COMMON_KEYS.map(key=>[key,String(data.get(key)||'').trim()]));
+    const clearReportKeys=records.flatMap(r=>TS_COMMON_KEYS.map(key=>`${r.id}:${key}`));
+    await mutate(next=>setTSCommonFields(next,groupId,values),`${group.name}のTS出来形 ${records.length}記録へ測定者・規格値・社内規格値を反映しました。`,{clearReportKeys});
+    clearReportKeys.forEach(key=>reportDrafts.delete(key));
+  });
 }
 
 function targetDeleteDialog(ids){
@@ -1102,6 +1116,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.action==='clear-target-selection'){selectedTargetIds.clear();render();return;}
     if(button.dataset.action==='delete-selected-targets'){targetDeleteDialog([...selectedTargetIds]);return;}
     if(button.dataset.routeSection){routeSectionDialog(button.dataset.routeSection);return;}
+    if(button.dataset.tsCommon){tsCommonDialog(button.dataset.tsCommon);return;}
     if(button.dataset.pasteScreenshot){beginCapture(button.dataset.pasteScreenshot,'スマホスクリーンショット','paste');return;}
     if(button.dataset.action==='enlarge-output'){openDocumentPreview($('outputPreview'),button);return;}
     if(button.dataset.openPhoto){openPhotoDrawer(button.dataset.openPhoto);return;}

@@ -169,6 +169,19 @@ export function setReportField(project, recordId, key, value) {
   });
 }
 
+/** TS出来形の測定者・規格値・社内規格値は路線内の全記録で共通なので、一度の入力でまとめて上書きする。 */
+export const TS_COMMON_KEYS = Object.freeze(['surveyor', 'standard', 'internalStandard']);
+export function setTSCommonFields(project, groupId, values) {
+  return changeProject(project, next => {
+    if (!next.groups.some(group => group.id === groupId)) fail('路線を選択してください。');
+    const records = next.targets.filter(target => target.groupId === groupId && target.useCase === 'TS出来形(バリアフリー)').flatMap(target => target.records);
+    if (!records.length) fail('この路線にTS出来形の記録がありません。');
+    for (const key of TS_COMMON_KEYS) validateReportValue(values[key]);
+    for (const record of records) record.reportFields = { ...(record.reportFields || {}), ...Object.fromEntries(TS_COMMON_KEYS.map(key => [key, values[key]])) };
+    return records.map(record => record.id);
+  });
+}
+
 export function describeReportPaste(project, { recordIds, keys, startRow = 0, startCol = 0, text } = {}) {
   validateProject(project);
   if (!Array.isArray(recordIds) || !recordIds.length || new Set(recordIds).size !== recordIds.length || !Array.isArray(keys) || !keys.length || new Set(keys).size !== keys.length || keys.some(key => typeof key !== 'string') || !Number.isSafeInteger(startRow) || !Number.isSafeInteger(startCol) || startRow < 0 || startCol < 0) fail('貼り付け先の表と開始セルが不正です。');
