@@ -1,6 +1,6 @@
 import {escapeHTML as esc} from '../ui/components.js';
 import {USE_CASES} from '../definitions.js';
-import {constructionSection,formatStation,tsReportCells,tsMeasurements,tsLocationLabel} from '../report-data.js';
+import {constructionSection,formatStation,tsReportCells,tsMeasurements,tsReportStation} from '../report-data.js';
 import {controlPointLines as wrap} from './control-point.js';
 
 // Read-only measurements of the user's four PDF references. Units are PDF points.
@@ -90,7 +90,7 @@ export function printMeasuredTS(page){
 const TS_PHOTO_BOXES=[[199.56,68.64,189,52.56],[200.52,304.8,189,52.44],[199.56,542.04,189,52.2]];
 const TS_FIELD_BOXES=[[104.4,125.52,235.2,173.28],[93.36,361.2,236.16,173.76],[94.32,595.68,233.88,173.76]];
 const TS_SCREEN_BOXES=[[392.28,128.16,78.72,173.28],[391.08,360.72,78.6,173.76],[390.12,597.24,78.48,173.76]];
-function tsCaption(row){const f=row.fields||{},m=tsMeasurements(f);return [`計測箇所：${tsLocationLabel(f,row.targetName)}`,`偏心：X=${m?.dx??'—'}mm  Y=${m?.dy??'—'}mm  D=${m?.d??'—'}mm`];}
+function tsCaption(row){const f=row.fields||{},m=tsMeasurements(f);return [`計測箇所：${tsReportStation(f,row.targetName)}`,`偏心：X=${m?.dx??'—'}mm  Y=${m?.dy??'—'}mm  D=${m?.d??'—'}mm`];}
 export function isTSPhotoPage(rows){return rows.length>0&&rows.every(row=>row.kind==='photo-row'&&row.useCase==='TS出来形(バリアフリー)'&&row.referencePhoto&&tsCaption(row).every(value=>wrap(value,173,9.24).length===1));}
 export function printTSPhotos(page,urls,labels){let b='',images='';page.rows.forEach((row,i)=>{const [x,y,w,h]=TS_PHOTO_BOXES[i],baseline=[85.92,321.96,559.08][i],caption=tsCaption(row);b+=`<g data-record-id="${esc(row.recordId)}"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="#000" stroke-width=".434"/>`+text(x+w/2,baseline,'縁石工　延長（偏心量）',9.24)+text(x+9,baseline+12.12,caption[0],9.24,'start')+text(x+9,baseline+(i===2?24.12:24.24),caption[1],9.24,'start')+'</g>';images+=photo(row.slots[0],urls,labels,TS_FIELD_BOXES[i])+photo(row.slots[1],urls,labels,TS_SCREEN_BOXES[i]);});return sheet('ts-photo','TS出来形の写真帳',b,images);}
 export function printMeasuredPage(page,urls,labels){return page.referenceLayout==='bm'?printBMReport(page):page.referenceLayout==='trial'?printTrialPhotos(page,urls,labels):page.referenceLayout==='ts-photo'?printTSPhotos(page,urls,labels):printMeasuredTS(page);}
