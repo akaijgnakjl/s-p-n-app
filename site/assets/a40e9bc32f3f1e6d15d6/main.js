@@ -355,6 +355,7 @@ function openDialog(title, body, submit, label = '保存') {
   $('dialogTitle').textContent = title;
   $('dialogBody').innerHTML = body;
   $('dialogSubmit').textContent = label;
+  $('dialogSubmit').classList.remove('portrait-accept');
   $('dialogError').hidden = true;
   $('editorForm').onchange = null;
   $('editorForm').oninput = null;
@@ -800,14 +801,29 @@ async function receivePhoto(event) {
   pendingPhoto={file,capture};
   await retryPendingPhoto();
 }
+// TS出来形のスクリーンショット以外は横向きが前提。縦向きは保存を止めて強く確認する。
+let portraitPromptOpen=false;
+function portraitWarningDialog(){
+  const capture=pendingPhoto?.capture;if(!capture)return;
+  const {target,record}=getContext(project,capture.recordId);
+  openDialog('⚠ 縦向きの写真です',`<div class="portrait-warning" role="alert"><strong>この写真は縦向きで撮影されています。</strong><p>TS出来形のスクリーンショット以外は、必ずスマホを横にして撮影してください。縦向きのままだと調書・写真帳の写真が崩れます。</p><p class="portrait-warning-target">${esc(target.name)} ／ ${esc(record.category)} ／ ${esc(capture.slot)}</p></div>${actions(button('横向きで撮り直す',{id:'retakePortrait',variant:'primary',className:'full-width'}))}`,async()=>{pendingPhoto.portraitOk=true;setTimeout(()=>void retryPendingPhoto(),50);},'縦向きのまま使う');
+  portraitPromptOpen=true;$('dialogSubmit').classList.add('portrait-accept');
+  $('retakePortrait').onclick=()=>{const c=pendingPhoto?.capture;discardPortraitPhoto(false);$('editorDialog').close();if(c)beginCapture(c.recordId,c.slot,c.source==='camera'?'camera':'file');};
+}
+function discardPortraitPhoto(announce=true){
+  portraitPromptOpen=false;pendingPhoto=null;$('photoInput').value='';$('cameraInput').value='';renderDraftNotice();
+  if(announce)notify('縦向きの写真は保存していません。横向きで撮り直してください。',true);
+}
 async function retryPendingPhoto(){
   if(!pendingPhoto)return;
   const {file,capture}=pendingPhoto;
+  let portrait=false;
   await run(()=>cancellable(async signal => {
     if (!project || capture.projectId !== project.id) throw new Error('撮影開始後に工事が切り替わりました。記録対象から選び直してください。');
     if (project.photos.length >= LIMITS.photos || project.photos.reduce((n, p) => n + p.size, 0) + file.size > LIMITS.totalBytes) throw new Error(`上限（履歴込み${LIMITS.photos}枚・原本合計${formatByteLimit()}）を超えるため、追加していません。`);
     showProgress('写真を確認して保存中…');
     const dimensions = await validateImage(file,{signal});
+    if(capture.slot!=='スマホスクリーンショット'&&Number(dimensions.height)>Number(dimensions.width)&&!pendingPhoto.portraitOk){portrait=true;return;}
     const next = clone(project);
     let tsRead=null,tsEffect={keys:[],boardChanged:false};
     if(capture.slot==='スマホスクリーンショット'&&getContext(next,capture.recordId).target.useCase==='TS出来形(バリアフリー)'){
@@ -830,6 +846,7 @@ async function retryPendingPhoto(){
     pendingPhoto=null;
     notify(`${target.name} ／ ${record.category} ／ ${capture.slot} を${storage ? '保存' : '取り込み'}しました。${tsRead?(tsRead.complete?'計測箇所・X・Yを調書と黒板に反映しました。出力前に確認してください。':`読み取れない項目：${tsRead.missing.join('・')}。調書で確認・入力してください。${tsRead.message||''}`):''}`,Boolean(tsRead&&!tsRead.complete));
   }));
+  if(portrait&&pendingPhoto)portraitWarningDialog();
 }
 
 function emptyView(){return renderInitialView({name:initialProjectName,routeName:initialRouteName,maxPhotos:LIMITS.photos,limitLabel:formatBytes(LIMITS.totalBytes)});}
@@ -851,11 +868,11 @@ function captureView({group,target,record,visible}){
     if(target.useCase==='MMS')board='<section class="panel"><p class="hint">MMSは作業前後の写真を原本のまま記録します。黒板・座標・施工区間・調書は不要です。</p></section>';
     else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false,{omitPoint:isTrial(target.useCase),fixedTS:target.useCase==='TS出来形(バリアフリー)'}),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id)});}
   }else selected=emptyState('記録対象を追加','用途と管理名を指定して登録します。施工区間は任意です。',{actions:button('記録対象を追加',{variant:'primary',attrs:{'data-action':'add-targets'}})});
-  return `${renderCaptureProgress(summary)}<div class="capture-layout">${picker}<div class="capture-main">${selected}${board}</div></div>${record?historyPanel(record.id):''}${renderFinishWork()}`;
+  return `${renderCaptureProgress(summary)}<div class="capture-layout">${picker}<div class="capture-main">${selected}${record?renderFinishWork():''}${board}</div></div>${record?historyPanel(record.id):''}`;
 }
 function slotHTML(record,slot){
   const photo=getSlotState(project,record.id,slot.name).photo,def=USE_CASES[getContext(project,record.id).target.useCase];
-  return renderPhotoSlot({name:slot.name,status:slot.status,statusLabel:statuses[slot.status],guide:def.guides[def.slots.indexOf(slot.name)],photo:photo?{id:photo.id,name:photo.originalName,sizeLabel:bytesLabel(photo.size)}:null,count:slot.photoIds.length,reason:slot.reason,recordId:record.id,boardAvailable:Boolean(def.defaultBoardTemplate)&&slot.name!=='スマホスクリーンショット',screenshot:slot.name==='スマホスクリーンショット'});
+  return renderPhotoSlot({name:slot.name,status:slot.status,statusLabel:statuses[slot.status],guide:def.guides[def.slots.indexOf(slot.name)],photo:photo?{id:photo.id,name:photo.originalName,sizeLabel:bytesLabel(photo.size)}:null,count:slot.photoIds.length,reason:slot.reason,recordId:record.id,boardAvailable:Boolean(def.defaultBoardTemplate)&&slot.name!=='スマホスクリーンショット',screenshot:slot.name==='スマホスクリーンショット',portrait:slot.name!=='スマホスクリーンショット'&&Number(photo?.height)>Number(photo?.width)});
 }
 function historyPanel(recordId=null){
   const photos=project.photos.filter(p=>!recordId||p.recordId===recordId).slice().sort((a,b)=>b.importedAt.localeCompare(a.importedAt)).map(p=>({id:p.id,name:p.originalName,slot:p.slot,dateLabel:workDateLabel(p),active:Boolean(p.recordId&&getSlotState(project,p.recordId,p.slot).photo?.id===p.id)}));
@@ -1009,7 +1026,7 @@ $('exportPackage').onclick = () => run(savePackage);
 $('cancelOperation').onclick=()=>{if(activeOperation){activeOperation.abort();$('cancelOperation').disabled=true;showProgress('取り消し中…');}};
 $('closeDialog').onclick = $('cancelDialog').onclick = () => $('editorDialog').close();
 $('editorDialog').addEventListener('cancel',event=>{if(busy)event.preventDefault();});
-$('editorDialog').addEventListener('close',()=>{if(pendingCapture?.paste)pendingCapture=null;});
+$('editorDialog').addEventListener('close',()=>{if(pendingCapture?.paste)pendingCapture=null;if(portraitPromptOpen){portraitPromptOpen=false;if(pendingPhoto&&!pendingPhoto.portraitOk)discardPortraitPhoto();}});
 $('editorForm').onsubmit = async event => {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
