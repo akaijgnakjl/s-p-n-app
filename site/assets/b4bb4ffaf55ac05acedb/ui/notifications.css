@@ -52,6 +52,14 @@
 .ui-save-status > span { min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
 .ui-save-status[data-state="failed"] { height: auto; min-height: 44px; max-height: min(24dvh, 180px); padding: var(--space-3); overflow: auto; overscroll-behavior: contain; border-color: var(--danger); background: var(--danger-soft); box-shadow: var(--shadow-floating); }
 .ui-save-status[data-state="failed"] > span { color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 保存状況・下書き・端末保存の注意は、変化した直後の2秒か「通知」一覧を開いた時だけ出す。 */
+.ui-notifications:not([data-history="open"]) > :is(#storageNotice, #draftNotice, #resumeStatus):not([data-peek]) { display: none; }
+.ui-notification-history { min-width: 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--brand-line); border-radius: var(--control-radius); background: var(--paper); box-shadow: var(--shadow-floating); pointer-events: auto; }
+.ui-notification-history-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.ui-notification-history ol { max-height: min(40dvh, 320px); margin: var(--space-2) 0 0; padding: 0; overflow: auto; list-style: none; overscroll-behavior: contain; }
+.ui-notification-history li { padding: var(--space-1) 0; border-top: 1px solid var(--border); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.ui-notification-history li[data-tone="error"] { color: var(--danger); }
+.ui-notification-history li[data-tone="warning"] { color: var(--warning); }
 .ui-notification-announcer { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 @media(max-width:760px) {

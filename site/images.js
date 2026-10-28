@@ -8,7 +8,7 @@ export { drawBoard } from './boards.js';
 export const validationLimits = Object.freeze({ imageBytes: LIMITS.imageBytes, pixels: LIMITS.pixels, side: LIMITS.side });
 
 const JPEG_SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
-const INVALID_IMAGE = 'JPEG・PNG・WebP の写真を選択してください。HEIC は端末で JPEG に変換してから取り込んでください。';
+const INVALID_IMAGE = 'JPEG・PNG・WebPの写真を選んでください。HEICはJPEGに変換してください。';
 const HEADER_BYTES = 1024 * 1024;
 const INITIAL_HEADER_BYTES = 64 * 1024;
 const headers = new WeakMap();
@@ -25,10 +25,10 @@ function imageTask(task, signal) {
 
 function checkDimensions(width, height) {
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) {
-    throw new Error('写真の画像サイズを読み取れません。別の写真を選択してください。');
+    throw new Error('写真の大きさを読み取れません。別の写真を選んでください。');
   }
   if (width > validationLimits.side || height > validationLimits.side || width * height > validationLimits.pixels) {
-    throw new Error('写真が大きすぎます。1辺 16,000px・4,000万画素以下の写真にしてください。');
+    throw new Error('写真が大きすぎます。一辺16,000px・4,000万画素以下にしてください。');
   }
 }
 
@@ -59,7 +59,7 @@ function readDimensions(bytes, totalBytes = bytes.length) {
       }
       at += length;
     }
-    throw new Error('JPEG の画像サイズを読み取れません。写真が破損していないか確認してください。');
+    throw new Error('JPEGを読み取れません。写真が壊れていないか確認してください。');
   }
   if (bytes.length >= 20 && word(bytes, 0) === 'RIFF' && word(bytes, 8) === 'WEBP') {
     const end = view.getUint32(4, true) + 8;
@@ -115,7 +115,7 @@ async function imageHeader(blob, signal) {
 async function decodeImage(blob, signal) {
   abortIfNeeded(signal);
   if (!(blob instanceof Blob) || blob.size < 1) throw new Error('空の写真ファイルは取り込めません。');
-  if (blob.size > validationLimits.imageBytes) throw new Error('写真1枚の上限は 20 MiB です。サイズを小さくしてから取り込んでください。');
+  if (blob.size > validationLimits.imageBytes) throw new Error('写真は1枚20MiBまでです。小さくしてから取り込んでください。');
   const header = await imageHeader(blob, signal);
   let decoded;
   if (typeof createImageBitmap === 'function') {
@@ -135,7 +135,7 @@ async function decodeImage(blob, signal) {
         const cleanup = () => signal?.removeEventListener('abort', cancel);
         const cancel = () => { cleanup(); img.src = ''; reject(new DOMException('画像処理を取り消しました。', 'AbortError')); };
         img.onload = () => { cleanup(); resolve(); };
-        img.onerror = () => { cleanup(); reject(new Error('写真を表示できません。ファイルの破損や画像形式を確認してください。')); };
+        img.onerror = () => { cleanup(); reject(new Error('写真を表示できません。壊れていないか、形式を確認してください。')); };
         signal?.addEventListener('abort', cancel, { once: true });
         if (signal?.aborted) { cancel(); return; }
         img.src = url;
@@ -152,7 +152,7 @@ async function decodeImage(blob, signal) {
     // EXIF orientation may swap the two sides; a different decoded canvas is invalid.
     const same = decoded.width === header.width && decoded.height === header.height;
     const rotated = decoded.width === header.height && decoded.height === header.width;
-    if (!same && !rotated) throw new Error('写真の画像サイズがヘッダーと一致しません。別の写真を選択してください。');
+    if (!same && !rotated) throw new Error('写真の大きさを正しく読み取れません。別の写真を選んでください。');
     validated.set(blob, { width: decoded.width, height: decoded.height });
     return decoded;
   } catch (error) {
@@ -181,7 +181,7 @@ function createCanvas(width, height) {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('このブラウザーで写真の描画を開始できません。');
+  if (!ctx) throw new Error('このブラウザーでは写真を描画できません。');
   return { canvas, ctx };
 }
 
@@ -190,7 +190,7 @@ function jpegBlob(canvas, quality, signal) {
   return new Promise((resolve, reject) => {
     canvas.toBlob(blob => {
       if (signal?.aborted) { reject(new DOMException('画像処理を取り消しました。', 'AbortError')); return; }
-      blob ? resolve(blob) : reject(new Error('写真の書き出しに失敗しました。端末の空きメモリを確認してください。'));
+      blob ? resolve(blob) : reject(new Error('写真を書き出せませんでした。端末の空きメモリを確認してください。'));
     }, 'image/jpeg', quality);
   });
 }
@@ -241,7 +241,7 @@ async function preparePhotoInternal(original, photo, signal) {
     const result = drawBoard(ctx, legacy ? canvas.width - boardWidth - margin : 0, canvas.height - boardHeight - (legacy ? margin : 0), boardWidth, boardHeight, photo.board);
     if (result.overflow) {
       const labels = Object.fromEntries(BOARD_TEMPLATES[photo.board.templateId].fields.map(field => [field.key, field.label]));
-      throw new Error(`黒板の文字が収まりません（${result.overflowFields.map(key => labels[key]).join('・')}）。内容を短くしてから保存してください。`);
+      throw new Error(`黒板の文字が収まりません（${result.overflowFields.map(key => labels[key]).join('・')}）。短くしてください。`);
     }
     return { blob: await jpegBlob(canvas, 0.93, signal), width: decoded.width, height: decoded.height };
   } finally {

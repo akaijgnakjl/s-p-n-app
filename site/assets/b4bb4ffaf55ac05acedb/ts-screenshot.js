@@ -4,7 +4,7 @@ export const TS_SCREENSHOT_REGIONS=Object.freeze({
   y:Object.freeze([.035,.532,.245,.045]),
   station:Object.freeze([.18,.748,.245,.038]),
 });
-const abort=signal=>{if(signal?.aborted)throw new DOMException('読取を取り消しました。','AbortError');};
+const abort=signal=>{if(signal?.aborted)throw new DOMException('読み取りを取り消しました。','AbortError');};
 export function parseTSNumber(text){const value=String(text??'').normalize('NFKC').replace(/\s/g,'');return /^-?\d{1,3}\.\d{3}$/.test(value)&&Math.abs(Number(value))<=10?value:null;}
 export function parseTSStation(text){const value=String(text??'').normalize('NFKC').toUpperCase().replace(/\s/g,'');const match=/^(?:SP)?(\d{1,6}(?:\.\d{1,3})?)\(?([LR])\)?$/.exec(value);return match?{station:match[1],side:match[2]}:null;}
 export function agreeTSReadings(first,second,parser){const a=parser(first.text),b=parser(second.text);return a!==null&&JSON.stringify(a)===JSON.stringify(b)&&Math.min(first.confidence??0,second.confidence??0)>=50?a:null;}
@@ -14,15 +14,15 @@ function regionCanvas(image,region,binary){const [x,y,w,h]=region,canvas=documen
 export async function readTSScreenshot(blob,{signal,onProgress=()=>{}}={}){
   abort(signal);let image,worker,workerPromise,timer;
   let rejectStop;const stopped=new Promise((_,reject)=>{rejectStop=reject;});stopped.catch(()=>{});
-  const stop=()=>{void worker?.terminate();rejectStop(new DOMException('読取を取り消しました。','AbortError'));};
+  const stop=()=>{void worker?.terminate();rejectStop(new DOMException('読み取りを取り消しました。','AbortError'));};
   signal?.addEventListener('abort',stop,{once:true});
   try{
     image=await createImageBitmap(blob);abort(signal);
-    if(image.height<600||image.width/image.height<.38||image.width/image.height>.58)return {complete:false,values:{},missing:['X','Y','計測箇所'],message:'縦向きのスマホスクリーンショット全体を選択してください。'};
-    onProgress('スクリーンショットを端末内で読み取っています…');
+    if(image.height<600||image.width/image.height<.38||image.width/image.height>.58)return {complete:false,values:{},missing:['X','Y','計測箇所'],message:'縦向きのスクリーンショット全体を選んでください。'};
+    onProgress('スクリーンショットを読み取っています…');
     const {default:Tesseract}=await import('./vendor/ocr/tesseract.esm.min.js');const {createWorker}=Tesseract;abort(signal);
     workerPromise=createWorker('eng',1,{workerPath:new URL('./vendor/ocr/worker.min.js',import.meta.url).href,corePath:new URL('./vendor/ocr/',import.meta.url).href,langPath:new URL('./vendor/ocr/',import.meta.url).href,workerBlobURL:false,cacheMethod:'none',gzip:true,logger:()=>{}});
-    timer=setTimeout(()=>{void worker?.terminate();rejectStop(new Error('読取に時間がかかっています。画像を保存して手入力できます。'));},90000);
+    timer=setTimeout(()=>{void worker?.terminate();rejectStop(new Error('時間がかかるため読み取りを中止しました。画像を保存して手入力できます。'));},90000);
     worker=await Promise.race([workerPromise,stopped]);abort(signal);
     const values={},missing=[],readings={};
     for(const [key,region] of Object.entries(TS_SCREENSHOT_REGIONS)){

@@ -14,7 +14,7 @@ const plainObject = value => Boolean(value && typeof value === 'object' && !Arra
 const aborted = () => new DOMException('端末内の一時保存を取り消しました。', 'AbortError');
 const abortIfNeeded = signal => { if (signal?.aborted) throw aborted(); };
 
-function conflict(message = '別タブで作業が更新されました。現在の作業ZIPを保存してから再読み込みしてください。') {
+function conflict(message = '別のタブで更新されました。作業ZIPを保存してから再読み込みしてください。') {
   const error = new Error(message); error.name = 'StorageConflictError'; return error;
 }
 function sessionToken(marker) {
@@ -30,15 +30,15 @@ function sessionSnapshot(session) {
   let nodes = 0;
   const ancestors = new Set();
   function check(value, depth) {
-    if (++nodes > 100000 || depth > 64) throw new Error('画面状態と下書きが複雑すぎます。');
+    if (++nodes > 100000 || depth > 64) throw new Error('画面状態と下書きが複雑すぎて保存できません。');
     if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value)) return;
     if (typeof value !== 'object' || !Array.isArray(value) && !plainObject(value) || ancestors.has(value)) throw new Error('画面状態と下書きにはJSONで保存できる値を指定してください。');
-    if (Array.isArray(value) && (Object.keys(value).length !== value.length || Object.keys(value).some(key => !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length))) throw new Error('画面状態と下書きの配列が不正です。');
+    if (Array.isArray(value) && (Object.keys(value).length !== value.length || Object.keys(value).some(key => !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length))) throw new Error('画面状態と下書きの形式が正しくありません。');
     ancestors.add(value);
     for (const key of Reflect.ownKeys(value)) {
       if (Array.isArray(value) && key === 'length') continue;
       const property = Object.getOwnPropertyDescriptor(value, key);
-      if (typeof key !== 'string' || !property.enumerable || !Object.hasOwn(property, 'value')) throw new Error('画面状態と下書きの保存項目が不正です。');
+      if (typeof key !== 'string' || !property.enumerable || !Object.hasOwn(property, 'value')) throw new Error('画面状態と下書きの形式が正しくありません。');
       check(property.value, depth + 1);
     }
     ancestors.delete(value);
@@ -50,26 +50,26 @@ function sessionSnapshot(session) {
 }
 
 function restoredSession(metadata, marker, view, drafts, readError) {
-  if (readError) return { session: null, sessionIssue: `画面状態と下書きを読み込めませんでした。保存済みの工事と写真は復元しています。${readError}` };
+  if (readError) return { session: null, sessionIssue: `画面状態と下書きを読み込めませんでした。${readError}` };
   if (marker === undefined && view === undefined && drafts === undefined) return { session: null, sessionIssue: null };
   try {
     const projectId = metadata.project.id, businessRevision = revisionOf(metadata);
-    if (!plainObject(marker) || marker.projectId !== projectId || marker.businessRevision !== businessRevision || !validId(marker.revision) || typeof marker.hasSession !== 'boolean' || typeof marker.savedAt !== 'string' || !Number.isFinite(Date.parse(marker.savedAt))) throw new Error('保存した工事の版と画面状態の版が一致しません。');
+    if (!plainObject(marker) || marker.projectId !== projectId || marker.businessRevision !== businessRevision || !validId(marker.revision) || typeof marker.hasSession !== 'boolean' || typeof marker.savedAt !== 'string' || !Number.isFinite(Date.parse(marker.savedAt))) throw new Error('工事と画面状態の版が一致しません。');
     if (!marker.hasSession) {
       if (view !== undefined || drafts !== undefined) throw new Error('削除済みの下書きが残っています。');
       return { session: null, sessionIssue: null };
     }
-    for (const row of [view, drafts]) if (!plainObject(row) || row.projectId !== projectId || row.businessRevision !== businessRevision || row.sessionRevision !== marker.revision || !Object.hasOwn(row, 'value')) throw new Error('画面状態と下書きの対応が一致しません。');
+    for (const row of [view, drafts]) if (!plainObject(row) || row.projectId !== projectId || row.businessRevision !== businessRevision || row.sessionRevision !== marker.revision || !Object.hasOwn(row, 'value')) throw new Error('画面状態と下書きが工事と一致しません。');
     return { session: sessionSnapshot({ view: view.value, drafts: drafts.value }), sessionIssue: null };
   } catch (error) {
-    return { session: null, sessionIssue: `画面状態と下書きに不整合があるため適用していません。保存済みの工事と写真は復元しています。${error.message}` };
+    return { session: null, sessionIssue: `画面状態と下書きに不整合があるため復元しませんでした。${error.message}` };
   }
 }
 
 function databaseError(error) {
   if (error?.name === 'AbortError') return error;
-  if (error?.name === 'QuotaExceededError') return new Error('端末の保存領域が足りません。作業ZIPを保存し、端末の空き容量を確認してください。');
-  return error instanceof Error ? error : new Error('端末内の一時保存に失敗しました。作業ZIPを保存してから再度お試しください。');
+  if (error?.name === 'QuotaExceededError') return new Error('端末の空き容量が足りません。作業ZIPを保存し、空きを増やしてください。');
+  return error instanceof Error ? error : new Error('端末に保存できませんでした。作業ZIPを保存してからやり直してください。');
 }
 
 function snapshot(project, originals) {
@@ -78,21 +78,21 @@ function snapshot(project, originals) {
   }
   if (project.photos.length > LIMITS.photos) throw new Error(`保存する原本は履歴を含め${LIMITS.photos}枚以内にしてください。`);
   const copy = typeof structuredClone === 'function' ? structuredClone(project) : JSON.parse(JSON.stringify(project));
-  if (!validId(copy.id)) throw new Error('保存する工事のIDが正しくありません。');
+  if (!validId(copy.id)) throw new Error('保存する工事のデータが正しくありません。');
   const files = new Map(originals);
   const ids = new Set();
   let bytes = 0;
   for (const photo of copy.photos) {
     if (!photo || !validId(photo.id) || ids.has(photo.id) || !(files.get(photo.id) instanceof Blob)) {
-      throw new Error('写真の原本と所属情報の対応が正しくありません。');
+      throw new Error('原本と写真の情報が一致しません。');
     }
     const blob = files.get(photo.id);
-    if (!Number.isSafeInteger(photo.size) || photo.size < 1 || photo.size > LIMITS.imageBytes || photo.size !== blob.size || photo.type !== blob.type) throw new Error('写真の原本と容量・形式が一致しないか、1枚の上限を超えています。');
+    if (!Number.isSafeInteger(photo.size) || photo.size < 1 || photo.size > LIMITS.imageBytes || photo.size !== blob.size || photo.type !== blob.type) throw new Error('原本の容量・形式が一致しないか、1枚の上限を超えています。');
     bytes += photo.size;
     if (bytes > LIMITS.totalBytes) throw new Error(`保存する原本の合計は${LIMITS.totalBytes.toLocaleString('ja-JP')}bytes以内にしてください。`);
     ids.add(photo.id);
   }
-  if (ids.size !== files.size) throw new Error('写真の原本と所属情報の数が一致しません。');
+  if (ids.size !== files.size) throw new Error('原本と写真の情報の数が一致しません。');
   for (const [id, blob] of files) {
     if (typeof id !== 'string' || !(blob instanceof Blob) || blob.size < 1) throw new Error('保存する写真の原本が正しくありません。');
   }
@@ -101,7 +101,7 @@ function snapshot(project, originals) {
 
 /** One active work package; originals are immutable and stored separately from editable metadata. */
 export async function openStorage() {
-  if (!globalThis.indexedDB) throw new Error('このブラウザーでは端末内の一時保存を利用できません。');
+  if (!globalThis.indexedDB) throw new Error('このブラウザーでは端末に保存できません。');
   const db = await new Promise((resolve, reject) => {
     let request;
     try { request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION); }
@@ -123,7 +123,7 @@ export async function openStorage() {
     request.onblocked = () => {
       if (!settled) {
         settled = true;
-        reject(new Error('別のタブが一時保存データを使用しています。他のタブを閉じて再読み込みしてください。'));
+        reject(new Error('別のタブで使用中です。他のタブを閉じて再読み込みしてください。'));
       }
     };
   });
@@ -138,7 +138,7 @@ export async function openStorage() {
   function enqueue(operation, { signal } = {}) {
     const result = tail.then(() => {
       abortIfNeeded(signal);
-      if (!available) throw new Error('端末内の一時保存が閉じられました。作業ZIPを保存してから再読み込みしてください。');
+      if (!available) throw new Error('端末への保存が中断されました。作業ZIPを保存して再読み込みしてください。');
       return operation();
     });
     // A fulfilled load() contains every Blob reference. The serialization tail
@@ -183,7 +183,7 @@ export async function openStorage() {
     }
   }
   function checkSessionRevision(marker) {
-    if (expectedSessionRevision !== UNINITIALIZED && expectedSessionRevision !== sessionToken(marker)) throw conflict('別タブで画面状態または下書きが更新されました。現在の編集内容を控えてから再読み込みしてください。');
+    if (expectedSessionRevision !== UNINITIALIZED && expectedSessionRevision !== sessionToken(marker)) throw conflict('別のタブで下書きが更新されました。編集内容を控えてから再読み込みしてください。');
   }
   function writeSession(tx, projectId, businessRevision, session, { clear = false } = {}) {
     const marker = { projectId, businessRevision, revision: crypto.randomUUID(), savedAt: new Date().toISOString(), hasSession: session !== null };
@@ -251,7 +251,7 @@ export async function openStorage() {
           request.onsuccess = () => { assign(request.result); finish(); };
           request.onerror = event => {
             event.preventDefault(); event.stopPropagation();
-            sessionReadError = request.error?.message || '補助データの読み込みに失敗しました。';
+            sessionReadError = request.error?.message || '原因不明のエラーです。';
             assign(undefined); finish();
           };
         };
@@ -278,7 +278,7 @@ export async function openStorage() {
         function finish() {
           if (!filesDone || !metadataDone || !markerDone || !viewDone || !draftsDone) return;
           if (!metadata) {
-            if (originals.size) fail(new Error('一時保存の写真に対応する工事データがありません。保存済みの作業ZIPを読み込んでください。'));
+            if (originals.size) fail(new Error('端末内の写真に対応する工事データがありません。作業ZIPを読み込んでください。'));
             else setResult({ data: null, revision: null, sessionRevision: sessionToken(marker) });
             return;
           }
@@ -306,7 +306,7 @@ export async function openStorage() {
         abortIfNeeded(options.signal);
         data = snapshot(project, originals);
         sessionData = session === undefined || session === null ? null : sessionSnapshot(session);
-        if (bundleId !== null && (typeof bundleId !== 'string' || !bundleId)) throw new Error('作業ファイルの識別情報が正しくありません。');
+        if (bundleId !== null && (typeof bundleId !== 'string' || !bundleId)) throw new Error('作業ZIPの情報が正しくありません。');
       } catch (error) { return Promise.reject(error); }
       return enqueue(() => saveSnapshot(data, true, bundleId, sessionData, options), options).finally(() => data.originals.clear());
     },
@@ -325,7 +325,7 @@ export async function openStorage() {
         function finish() {
           if (!projectDone || !sessionDone) return;
           try {
-            if (!current.result || current.result.project?.id !== projectId) throw conflict('現在の工事と画面状態の保存先が一致しません。再読み込みして工事を確認してください。');
+            if (!current.result || current.result.project?.id !== projectId) throw conflict('開いている工事が変わりました。再読み込みしてください。');
             if (expectedRevision === UNINITIALIZED || expectedSessionRevision === UNINITIALIZED) throw conflict('保存済みの作業を読み込んでから画面状態を保存してください。');
             checkRevision(current.result); checkSessionRevision(previousSession.result);
             setResult(writeSession(tx, projectId, revisionOf(current.result), data));

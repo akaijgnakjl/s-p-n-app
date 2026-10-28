@@ -81,6 +81,14 @@ body:not(.has-project) footer { max-width:640px; padding-inline:0; text-align:le
 .board-apply { margin:var(--space-2) 0 var(--space-3); padding:var(--space-2) var(--space-3); border:1px solid var(--brand-line); border-radius:var(--control-radius); background:var(--brand-soft); }
 .board-apply.is-off { border-color:var(--warning); background:var(--warning-soft); }
 .board-apply .hint { margin-top:var(--space-1); }
+.header-tools { display:flex; align-items:center; gap:var(--space-2); }
+.header-tools .button { min-height:36px; padding-inline:var(--space-3); }
+.header-tools #helpToggle[aria-pressed="true"] { background:var(--brand-soft); border-color:var(--brand-line); }
+.header-tools .button, .site-header .brand { white-space:nowrap; }
+@media (max-width:480px) { .header-tools { gap:var(--space-1); } .header-tools .button { min-height:32px; padding-inline:var(--space-2); font-size:12px; } .header-tools .version { display:none; } }
+/* 説明文は「説明」ボタンを押した時だけ出す。入力不足・保存状況など作業に必要な表示（id・role・keep付き）とダイアログ内は常に出す。 */
+body:not(.show-help) main :is(.hint, .board-caption, .dialog-note, .ui-section-note):not([id]):not([role]):not(.keep):not(dialog *),
+body:not(.show-help) main > footer { display:none; }
 .route-status-actions { margin-top:var(--space-2); }
 .button.route-status-button { min-height:48px; padding-inline:var(--space-4); font-weight:700; color:#fff; }
 .button.route-status-button.is-missing, .button.route-status-button.is-missing:hover:not(:disabled) { background:#b3261e; border-color:#b3261e; color:#fff; }

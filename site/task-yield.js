@@ -25,7 +25,7 @@ export function createTaskYield({
       try {
         channel = new Channel();
         channel.port1.onmessage = () => finish();
-        channel.port1.onmessageerror = () => finish(new Error('タスクの再開に失敗しました。'));
+        channel.port1.onmessageerror = () => finish(new Error('処理を再開できませんでした。'));
         channel.port2.postMessage(null);
       } catch (error) { finish(error); }
     });

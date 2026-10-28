@@ -7,7 +7,7 @@ export function safePhotoName(value){
   const name=String(value).normalize('NFC').replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_').replace(/[. ]+$/g,'').slice(0,100)||'写真';
   return /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(name)?`_${name}`:name;
 }
-const abort=signal=>{if(signal?.aborted)throw new DOMException('写真出力を取り消しました。保存済みのファイルは出力先に残ります。','AbortError');};
+const abort=signal=>{if(signal?.aborted)throw new DOMException('写真出力を取り消しました。保存済みのファイルは残ります。','AbortError');};
 export function photoExportPlan(project,recordIds){
   validateProject(project);
   const wanted=new Set(recordIds),found=new Set(),items=[];
@@ -15,7 +15,7 @@ export function photoExportPlan(project,recordIds){
     if(!wanted.has(record.id))continue;found.add(record.id);
     for(const slot of USE_CASES[target.useCase].slots){const state=getSlotState(project,record.id,slot);if(state.status==='taken')items.push({photo:structuredClone(state.photo),base:safePhotoName(`${target.name}_${record.category}_${slot}`)});}
   }
-  if(found.size!==wanted.size)throw new Error('出力対象の記録が見つかりません。');
+  if(found.size!==wanted.size)throw new Error('出力する作業記録が見つかりません。');
   if(!items.length)throw new Error('選択範囲に採用写真がありません。');
   return items;
 }
@@ -29,7 +29,7 @@ export async function exportPhotos(project,originals,recordIds,{directory=null,s
     for(const item of plan){
       abort(signal);
       const original=sources.get(item.photo.id);
-      if(!(original instanceof Blob)||original.size!==item.photo.size||original.type!==item.photo.type)throw new Error('出力する元写真が見つかりません。');
+      if(!(original instanceof Blob)||original.size!==item.photo.size||original.type!==item.photo.type)throw new Error('出力する原本が見つかりません。');
       const blob=await compose(original,item.photo,{signal});abort(signal);
       const extension=({'image/jpeg':'jpg','image/png':'png','image/webp':'webp'})[blob.type];
       if(!extension)throw new Error('写真の形式を確認してください。');
@@ -52,6 +52,6 @@ export async function exportPhotos(project,originals,recordIds,{directory=null,s
     }
     if(zip){zip.end();if(zipError)throw zipError;if(!finished)throw new Error('写真ZIPを作成できませんでした。');}
     return {count:completed,blob:zip?new Blob(chunks,{type:'application/zip'}):null};
-  }catch(error){const failure=new Error(`${error.message}（保存完了 ${completed}/${plan.length}枚）`,{cause:error});failure.name=error.name;throw failure;}
+  }catch(error){const failure=new Error(`${error.message}（${completed}/${plan.length}枚保存済み）`,{cause:error});failure.name=error.name;throw failure;}
   finally{zip?.terminate();chunks.length=0;sources.clear();currentInput=null;}
 }

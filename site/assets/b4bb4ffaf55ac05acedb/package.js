@@ -49,7 +49,7 @@ function updateCRC(crc, data) {
 
 async function readBytes(file, start, length, signal) {
   abortIfNeeded(signal);
-  if (start < 0 || length < 0 || start + length > file.size) fail('ZIPが途中で切れているか、構造が不正です。');
+  if (start < 0 || length < 0 || start + length > file.size) fail('ZIPが壊れているか、途中で切れています。');
   const bytes = new Uint8Array(await file.slice(start, start + length).arrayBuffer());
   abortIfNeeded(signal);
   if (bytes.length !== length) fail('ZIPを最後まで読み込めませんでした。');
@@ -59,9 +59,9 @@ const viewOf = bytes => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteL
 function checkExtra(bytes) {
   const view = viewOf(bytes);
   for (let offset = 0; offset < bytes.length;) {
-    if (offset + 4 > bytes.length) fail('ZIPの追加情報が不正です。');
+    if (offset + 4 > bytes.length) fail('ZIPのデータが壊れています。');
     const id = view.getUint16(offset, true), size = view.getUint16(offset + 2, true);
-    if (id === 1 || offset + 4 + size > bytes.length) fail('ZIP64または不正なZIPには対応していません。');
+    if (id === 1 || offset + 4 + size > bytes.length) fail('このZIPの形式には対応していません。');
     offset += 4 + size;
   }
 }
@@ -69,29 +69,29 @@ function checkExtra(bytes) {
 /** Read only the small directory and headers first. Do not trust their size/CRC claims. */
 async function inspectArchive(file, { signal, onProgress } = {}) {
   abortIfNeeded(signal);
-  if (!(file instanceof Blob) || file.size < 22 || file.size > PACKAGE_LIMITS.archiveBytes) fail('作業ZIPの容量が対応範囲を超えているか、空のファイルです。');
+  if (!(file instanceof Blob) || file.size < 22 || file.size > PACKAGE_LIMITS.archiveBytes) fail('作業ZIPが空か、容量が大きすぎます。');
   const tailStart = Math.max(0, file.size - 65557), tail = await readBytes(file, tailStart, file.size - tailStart, signal), tailView = viewOf(tail);
   let end = -1;
   for (let offset = tail.length - 22; offset >= 0; offset--) {
     if (tailView.getUint32(offset, true) === 0x06054b50 && offset + 22 + tailView.getUint16(offset + 20, true) === tail.length) { end = offset; break; }
   }
-  if (end < 0) fail('ZIPの終端が見つかりません。');
+  if (end < 0) fail('ZIPが途中で切れています。');
   const count = tailView.getUint16(end + 10, true), directorySize = tailView.getUint32(end + 12, true), directoryOffset = tailView.getUint32(end + 16, true);
-  if (tailView.getUint16(end + 4, true) || tailView.getUint16(end + 6, true) || tailView.getUint16(end + 8, true) !== count || !count || count > PACKAGE_LIMITS.entries || directorySize > PACKAGE_LIMITS.directoryBytes || directoryOffset + directorySize !== tailStart + end) fail('ZIPの件数・サイズ・構造が対応範囲を超えています。');
+  if (tailView.getUint16(end + 4, true) || tailView.getUint16(end + 6, true) || tailView.getUint16(end + 8, true) !== count || !count || count > PACKAGE_LIMITS.entries || directorySize > PACKAGE_LIMITS.directoryBytes || directoryOffset + directorySize !== tailStart + end) fail('ZIPの件数か容量が上限を超えています。');
   const directory = await readBytes(file, directoryOffset, directorySize, signal), view = viewOf(directory), entries = new Map();
   let offset = 0, expanded = 0, originalsBytes = 0, payloadBytes = 0;
   for (let index = 0; index < count; index++) {
     abortIfNeeded(signal);
-    if (offset + 46 > directory.length || view.getUint32(offset, true) !== 0x02014b50) fail('ZIPの一覧情報が不正です。');
+    if (offset + 46 > directory.length || view.getUint32(offset, true) !== 0x02014b50) fail('ZIPのデータが壊れています。');
     const flags = view.getUint16(offset + 8, true), method = view.getUint16(offset + 10, true);
     const crc = view.getUint32(offset + 16, true), compressed = view.getUint32(offset + 20, true), size = view.getUint32(offset + 24, true);
     const nameLength = view.getUint16(offset + 28, true), extraLength = view.getUint16(offset + 30, true), commentLength = view.getUint16(offset + 32, true), localOffset = view.getUint32(offset + 42, true);
     const next = offset + 46 + nameLength + extraLength + commentLength;
-    if (next > directory.length || nameLength > MAX_NAME_BYTES || flags & ~0x080e || ![0, 8].includes(method) || view.getUint16(offset + 34, true)) fail('暗号化・分割ZIPまたは未対応のZIPです。');
+    if (next > directory.length || nameLength > MAX_NAME_BYTES || flags & ~0x080e || ![0, 8].includes(method) || view.getUint16(offset + 34, true)) fail('暗号化・分割されたZIPには対応していません。');
     const name = decoder.decode(directory.subarray(offset + 46, offset + 46 + nameLength));
-    if (name !== 'project.json' && !originalPath(name)) fail('ZIPに許可されていないパスがあります。');
+    if (name !== 'project.json' && !originalPath(name)) fail('作業ZIPに不要なファイルが含まれています。');
     if (entries.has(name)) fail('ZIP内のファイル名が重複しています。');
-    if (!size || size > entryLimit(name) || (method === 0 && compressed !== size)) fail('ZIP内のファイル容量が上限を超えているか、不正です。');
+    if (!size || size > entryLimit(name) || (method === 0 && compressed !== size)) fail('ZIP内のファイル容量が上限を超えているか、壊れています。');
     checkExtra(directory.subarray(offset + 46 + nameLength, offset + 46 + nameLength + extraLength));
     expanded += size;
     payloadBytes += compressed;
@@ -100,18 +100,18 @@ async function inspectArchive(file, { signal, onProgress } = {}) {
     entries.set(name, { name, flags, method, crc, compressed, size, localOffset });
     offset = next;
   }
-  if (offset !== directory.length || !entries.has('project.json')) fail('ZIP内のproject.jsonまたは一覧情報が不正です。');
-  if (payloadBytes > expanded + PACKAGE_LIMITS.compressionBytes || file.size - payloadBytes > PACKAGE_LIMITS.headerBytes) fail('ZIPの圧縮データまたは付加情報が上限を超えています。');
+  if (offset !== directory.length || !entries.has('project.json')) fail('作業ZIPに工事データがないか、壊れています。');
+  if (payloadBytes > expanded + PACKAGE_LIMITS.compressionBytes || file.size - payloadBytes > PACKAGE_LIMITS.headerBytes) fail('ZIPの容量が上限を超えています。');
   // Check local headers too: prevent a second hidden/duplicate entry and conflicting names.
   let cursor = 0, inspected = 0;
   for (const entry of [...entries.values()].sort((a, b) => a.localOffset - b.localOffset)) {
     abortIfNeeded(signal);
-    if (entry.localOffset !== cursor) fail('ZIPに重複・欠落したファイル領域があります。');
+    if (entry.localOffset !== cursor) fail('ZIPのデータが壊れています。');
     const header = viewOf(await readBytes(file, cursor, 30, signal));
-    if (header.getUint32(0, true) !== 0x04034b50 || header.getUint16(6, true) !== entry.flags || header.getUint16(8, true) !== entry.method) fail('ZIPの見出しが一覧情報と一致しません。');
+    if (header.getUint32(0, true) !== 0x04034b50 || header.getUint16(6, true) !== entry.flags || header.getUint16(8, true) !== entry.method) fail('ZIPのデータが壊れています。');
     const nameLength = header.getUint16(26, true), extraLength = header.getUint16(28, true);
     const names = await readBytes(file, cursor + 30, nameLength + extraLength, signal);
-    if (decoder.decode(names.subarray(0, nameLength)) !== entry.name) fail('ZIPのファイル名が一致しません。');
+    if (decoder.decode(names.subarray(0, nameLength)) !== entry.name) fail('ZIPのデータが壊れています。');
     checkExtra(names.subarray(nameLength));
     entry.dataOffset = cursor + 30 + names.length;
     cursor = entry.dataOffset + entry.compressed;
@@ -119,9 +119,9 @@ async function inspectArchive(file, { signal, onProgress } = {}) {
     if (entry.flags & 8) {
       const descriptorBytes = await readBytes(file, cursor, Math.min(16, directoryOffset - cursor), signal), descriptor = viewOf(descriptorBytes);
       const skip = descriptorBytes.length >= 4 && descriptor.getUint32(0, true) === 0x08074b50 ? 4 : 0;
-      if (descriptorBytes.length < skip + 12 || descriptor.getUint32(skip, true) !== entry.crc || descriptor.getUint32(skip + 4, true) !== entry.compressed || descriptor.getUint32(skip + 8, true) !== entry.size) fail('ZIPの検査情報が一致しません。');
+      if (descriptorBytes.length < skip + 12 || descriptor.getUint32(skip, true) !== entry.crc || descriptor.getUint32(skip + 4, true) !== entry.compressed || descriptor.getUint32(skip + 8, true) !== entry.size) fail('ZIPのデータが壊れています。');
       cursor += skip + 12;
-    } else if (header.getUint32(14, true) !== entry.crc || header.getUint32(18, true) !== entry.compressed || header.getUint32(22, true) !== entry.size) fail('ZIPのサイズ・検査情報が一致しません。');
+    } else if (header.getUint32(14, true) !== entry.crc || header.getUint32(18, true) !== entry.compressed || header.getUint32(22, true) !== entry.size) fail('ZIPのデータが壊れています。');
     progress(onProgress, 'inspect', ++inspected, count, cursor, file.size);
   }
   if (cursor !== directoryOffset) fail('ZIP内に不明なデータがあります。');
@@ -133,17 +133,17 @@ export async function exportWorkPackage(project, originals, { onProgress, signal
   abortIfNeeded(signal);
   const snapshot = structuredClone(project);
   validateProject(snapshot);
-  if (!(originals instanceof Map)) fail('工事情報と元写真の件数が一致しません。');
+  if (!(originals instanceof Map)) fail('工事データと原本の枚数が合いません。');
   // Blob is immutable; copying this small map also freezes which originals this snapshot uses.
   const sourceOriginals = new Map(originals);
-  if (sourceOriginals.size !== snapshot.photos.length) fail('工事情報と元写真の件数が一致しません。');
+  if (sourceOriginals.size !== snapshot.photos.length) fail('工事データと原本の枚数が合いません。');
   for (const photo of snapshot.photos) {
     const blob = sourceOriginals.get(photo.id);
-    if (!(blob instanceof Blob) || blob.size !== photo.size || blob.type !== photo.type) fail(`元写真が見つからないか、容量・形式が一致しません：${photo.originalName}`);
+    if (!(blob instanceof Blob) || blob.size !== photo.size || blob.type !== photo.type) fail(`原本が見つからないか、壊れています：${photo.originalName}`);
   }
   const bundleId = crypto.randomUUID(), exportedAt = new Date().toISOString();
   const metadata = encoder.encode(JSON.stringify({ ...snapshot, bundleId, exportedAt }));
-  if (metadata.length > PACKAGE_LIMITS.metadataBytes) fail('工事情報が2MiBを超えています。');
+  if (metadata.length > PACKAGE_LIMITS.metadataBytes) fail('工事データが2MiBを超えています。');
   const chunks = [];
   let generated = 0, finished = false, streamError, currentInput;
   const zip = new Zip((error, chunk, final) => {
@@ -182,7 +182,7 @@ export async function exportWorkPackage(project, originals, { onProgress, signal
     }
     zip.end();
     if (streamError) throw streamError;
-    if (!finished) fail('ZIPの生成が完了しませんでした。');
+    if (!finished) fail('作業ZIPを作成できませんでした。');
     abortIfNeeded(signal);
     const blob = new Blob(chunks, { type: 'application/zip' });
     const name = snapshot.name.replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, '_').slice(0, 60).trim() || '工事';
@@ -198,14 +198,14 @@ export async function exportWorkPackage(project, originals, { onProgress, signal
 async function manifestProject(blob, entries) {
   let project;
   try { project = JSON.parse(decoder.decode(new Uint8Array(await blob.arrayBuffer()))); }
-  catch { fail('project.jsonの文字コードまたはJSONが不正です。'); }
+  catch { fail('工事データを読み取れません。'); }
   project = upgradeProject(project);
-  if (typeof project.bundleId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(project.bundleId) || typeof project.exportedAt !== 'string' || !Number.isFinite(Date.parse(project.exportedAt))) fail('作業ZIPの書き出し情報が不正です。');
+  if (typeof project.bundleId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(project.bundleId) || typeof project.exportedAt !== 'string' || !Number.isFinite(Date.parse(project.exportedAt))) fail('作業ZIPの書き出し情報が正しくありません。');
   const paths = new Set(project.photos.map(photo => photo.originalPath));
-  if (paths.size !== project.photos.length || entries.size !== paths.size + 1 || [...entries.keys()].some(name => name !== 'project.json' && !paths.has(name))) fail('工事情報にない元写真、または欠けた元写真があります。');
+  if (paths.size !== project.photos.length || entries.size !== paths.size + 1 || [...entries.keys()].some(name => name !== 'project.json' && !paths.has(name))) fail('原本に過不足があります。');
   for (const photo of project.photos) {
     const entry = entries.get(photo.originalPath), type = TYPES[photo.originalPath.split('.').pop()];
-    if (!entry || entry.size !== photo.size || type !== photo.type) fail('工事情報と元写真の容量・形式が一致しません。');
+    if (!entry || entry.size !== photo.size || type !== photo.type) fail('工事データと原本の容量・形式が合いません。');
   }
   return project;
 }
@@ -257,7 +257,7 @@ async function extractEntry(file, entry, state, { onProgress, signal }) {
       blob = new Blob(parts, { type: entry.name === 'project.json' ? 'application/json' : TYPES[entry.name.split('.').pop()] });
     } finally { parts.length = 0; inflater.ondata = null; }
   }
-  if (!final || size !== entry.size || ((crc ^ 0xffffffff) >>> 0) !== entry.crc) fail('ZIPの写真または工事情報が破損しています（CRC・容量不一致）。');
+  if (!final || size !== entry.size || ((crc ^ 0xffffffff) >>> 0) !== entry.crc) fail('ZIP内の写真か工事データが壊れています。');
   state.completed++; await notify();
   return blob;
 }
@@ -276,10 +276,10 @@ export async function importWorkPackage(file, { onProgress, validateImage = defa
     for (const photo of project.photos) {
       abortIfNeeded(signal);
       const blob = await extractEntry(file, entries.get(photo.originalPath), state, { onProgress, signal });
-      if (!blob || blob.size !== photo.size || blob.type !== photo.type) fail('工事情報と元写真の容量・形式が一致しません。');
+      if (!blob || blob.size !== photo.size || blob.type !== photo.type) fail('工事データと原本の容量・形式が合いません。');
       const dimensions = await validateImage(blob, { signal });
       abortIfNeeded(signal);
-      if (dimensions.width !== photo.width || dimensions.height !== photo.height) fail('工事情報と元写真の寸法が一致しません。');
+      if (dimensions.width !== photo.width || dimensions.height !== photo.height) fail('工事データと原本の寸法が一致しません。');
       originals.set(photo.id, blob);
       progress(onProgress, 'validate', originals.size, project.photos.length, originals.size, project.photos.length);
       await pause();

@@ -7,28 +7,28 @@ export const STATION_NOTATIONS = Object.freeze(['SP', 'No.', '自由入力', 'KP
 
 /** Item names describe a whole form. Column labels remain fixed for the six known uses. */
 export function defaultReportItemName(useCase) {
-  if (!own(USE_CASES, useCase)) fail('帳票の用途が不正です。');
+  if (!own(USE_CASES, useCase)) fail('帳票の用途が正しくありません。');
   return useCase === '仮BM' ? '仮BM設置' : useCase;
 }
 
 function validateItemNames(names) {
-  if (!object(names) || Object.keys(names).some(useCase => !own(USE_CASES, useCase))) fail('帳票項目名は定義済みの6用途で指定してください。');
+  if (!object(names) || Object.keys(names).some(useCase => !own(USE_CASES, useCase))) fail('帳票項目名は6つの用途ごとに指定してください。');
   for (const value of Object.values(names)) {
     validateReportValue(value, '帳票項目名');
-    if (!value.trim()) fail('保存する帳票項目名は空欄にできません。既定値へ戻す操作を使用してください。');
+    if (!value.trim()) fail('帳票項目名は空欄にできません。既定値に戻す操作を使ってください。');
   }
 }
 
 export function validateReportSettings(project) {
   if (project.reportSettings === undefined) return;
   const settings = project.reportSettings;
-  if (!object(settings) || Object.keys(settings).some(key => !['defaults', 'groups'].includes(key))) fail('帳票項目名の設定形式が不正です。');
+  if (!object(settings) || Object.keys(settings).some(key => !['defaults', 'groups'].includes(key))) fail('帳票項目名の設定が正しくありません。');
   if (settings.defaults !== undefined) validateItemNames(settings.defaults);
   if (settings.groups !== undefined) {
-    if (!object(settings.groups)) fail('分類別の帳票項目名が不正です。');
+    if (!object(settings.groups)) fail('グループ別の帳票項目名が正しくありません。');
     const ids = new Set(project.groups.map(group => group.id));
     for (const [groupId, names] of Object.entries(settings.groups)) {
-      if (!ids.has(groupId)) fail('帳票項目名が存在しない分類を参照しています。');
+      if (!ids.has(groupId)) fail('帳票項目名のグループが見つかりません。');
       validateItemNames(names);
     }
   }
@@ -36,7 +36,7 @@ export function validateReportSettings(project) {
 
 export function getReportItemNames(project, groupId = null) {
   validateReportSettings(project);
-  if (groupId !== null && !project.groups.some(group => group.id === groupId)) fail('帳票項目名の分類が見つかりません。');
+  if (groupId !== null && !project.groups.some(group => group.id === groupId)) fail('帳票項目名のグループが見つかりません。');
   return Object.fromEntries(Object.keys(USE_CASES).map(useCase => [useCase,
     project.reportSettings?.groups?.[groupId]?.[useCase] ?? project.reportSettings?.defaults?.[useCase] ?? defaultReportItemName(useCase)]));
 }
@@ -56,8 +56,8 @@ export function visibleReportColumns(useCase){
 /** Atomic settings edit: an empty value removes only that scope's override. */
 export function updateReportItemNames(project, { groupId = null, names } = {}) {
   validateReportSettings(project);
-  if (groupId !== null && !project.groups.some(group => group.id === groupId)) fail('帳票項目名の分類が見つかりません。');
-  if (!object(names) || Object.keys(names).some(useCase => !own(USE_CASES, useCase))) fail('帳票項目名は定義済みの6用途で指定してください。');
+  if (groupId !== null && !project.groups.some(group => group.id === groupId)) fail('帳票項目名のグループが見つかりません。');
+  if (!object(names) || Object.keys(names).some(useCase => !own(USE_CASES, useCase))) fail('帳票項目名は6つの用途ごとに指定してください。');
   for (const value of Object.values(names)) validateReportValue(value, '帳票項目名');
   const next = structuredClone(project);
   next.reportSettings ??= { defaults: {}, groups: {} };
@@ -121,14 +121,14 @@ export function constructionSection(start, end, excluded = '') {
 }
 
 export function validateReportSection(section) {
-  if (!object(section) || Object.keys(section).some(key => !['start', 'end', 'excluded', 'notation', 'custom'].includes(key))) fail('施工区間の形式が不正です。');
-  for (const key of ['start', 'end']) if (typeof section[key] !== 'string' || section[key].length > 30) fail('施工区間の起点・終点を数字で指定してください。');
-  if (section.excluded !== undefined && (typeof section.excluded !== 'string' || section.excluded.length > 30)) fail('不施工区間長が不正です。');
-  if (!STATION_NOTATIONS.includes(section.notation)) fail('測点の表示形式が不正です。');
+  if (!object(section) || Object.keys(section).some(key => !['start', 'end', 'excluded', 'notation', 'custom'].includes(key))) fail('施工区間の形式が正しくありません。');
+  for (const key of ['start', 'end']) if (typeof section[key] !== 'string' || section[key].length > 30) fail('施工区間の起点・終点を数字で入力してください。');
+  if (section.excluded !== undefined && (typeof section.excluded !== 'string' || section.excluded.length > 30)) fail('不施工区間長が正しくありません。');
+  if (!STATION_NOTATIONS.includes(section.notation)) fail('測点の表記を選んでください。');
   if (section.custom !== undefined && (typeof section.custom !== 'string' || section.custom.length > 30 || /[\u0000-\u001f\u007f]/.test(section.custom))) fail('自由入力の測点名は30文字以内にしてください。');
   if (section.notation === '自由入力' && !String(section.custom || '').trim()) fail('自由入力の測点名を入力してください。');
   const result = constructionSection(section.start, section.end, section.excluded);
-  if (result.error || !result.complete) fail(result.error || '施工区間を指定する場合は起点と終点を入力してください。');
+  if (result.error || !result.complete) fail(result.error || '施工区間の起点と終点を入力してください。');
   return section;
 }
 
@@ -137,7 +137,7 @@ export function formatStation(value, notation = 'SP', custom = '') {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
   const mm = millimeters(raw);
-  if (!STATION_NOTATIONS.includes(notation)) fail('測点の表示形式が不正です。');
+  if (!STATION_NOTATIONS.includes(notation)) fail('測点の表記を選んでください。');
   if (notation === 'No.') {
     const absolute = mm < 0n ? -mm : mm;
     return `No.${mm < 0n ? '-' : ''}${absolute / 100000n}+${decimalMm(absolute % 100000n, 3, true)}`;
@@ -156,11 +156,11 @@ export function sectionLabel(section) {
 
 /** Optional additions to schema 2; unknown bounded field keys survive existing saved work. */
 export function validateRecordReport(useCase, record) {
-  if (!own(USE_CASES, useCase)) fail('調書の用途が不正です。');
+  if (!own(USE_CASES, useCase)) fail('調書の用途が正しくありません。');
   if (record.reportFields !== undefined) {
-    if (!object(record.reportFields) || Object.keys(record.reportFields).length > 100) fail('調書の入力項目が不正です。');
+    if (!object(record.reportFields) || Object.keys(record.reportFields).length > 100) fail('調書の入力項目が正しくありません。');
     for (const [key, value] of Object.entries(record.reportFields)) {
-      if (!key || key.length > 100 || /[\u0000-\u001f\u007f]/.test(key)) fail('調書の項目名が不正です。');
+      if (!key || key.length > 100 || /[\u0000-\u001f\u007f]/.test(key)) fail('調書の項目名が正しくありません。');
       validateReportValue(value);
       if(useCase==='TS出来形(バリアフリー)'&&['designX','measuredX','designY','measuredY'].includes(key)&&value.trim())millimeters(value.trim());
     }
@@ -168,7 +168,7 @@ export function validateRecordReport(useCase, record) {
   if (record.reportSection !== undefined && record.reportSection !== null) validateReportSection(record.reportSection);
   if (record.reportReview !== undefined && record.reportReview !== null) {
     const review = record.reportReview;
-    if (!object(review) || typeof review.signature !== 'string' || !/^r1-[a-f0-9]{16}$/.test(review.signature) || typeof review.reviewedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(review.reviewedAt) || !Number.isFinite(Date.parse(review.reviewedAt))) fail('調書の確認記録が不正です。');
+    if (!object(review) || typeof review.signature !== 'string' || !/^r1-[a-f0-9]{16}$/.test(review.signature) || typeof review.reviewedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(review.reviewedAt) || !Number.isFinite(Date.parse(review.reviewedAt))) fail('調書の確認記録が正しくありません。');
   }
 }
 
@@ -215,10 +215,18 @@ export function tsLocationLabel(fields={},fallback=''){
   const station=String(fields.station||fallback).trim(),side=String(fields.side||'').trim();
   return station+(side&&tsEmbeddedSide(station)!==side.toUpperCase()?` (${side})`:'');
 }
+/** TS調書の「測点又は区別」へ付ける頭。路線ごとに選び、各記録のreportFieldsへ保存する（入力欄には出さない）。 */
+export const TS_STATION_NOTATIONS = Object.freeze(['なし', 'SP', 'No.', 'KP=', '自由入力']);
+export function tsStationPrefix(fields={}){const notation=fields.stationNotation;return notation==='自由入力'?String(fields.stationCustom||'').trim():['SP','No.','KP='].includes(notation)?notation:'';}
+export function tsReportStation(fields={},fallback=''){
+  const label=tsLocationLabel(fields,fallback),prefix=tsStationPrefix(fields);
+  // 測点が未入力で管理名を代わりに出す時と、既に頭が付いている時は重ねない。
+  return prefix&&String(fields.station||'').trim()&&!label.toUpperCase().startsWith(prefix.toUpperCase())?prefix+label:label;
+}
 export function tsReportCells(context){
   if(context.tsCells)return context.tsCells;
   const f=context.record.reportFields||{},m=tsMeasurements(f);
-  return [tsLocationLabel(f,context.targetName),f.designX,f.measuredX,m?.dx??'—',f.designY,f.measuredY,m?.dy??'—',m?.dx??'—',m?.dy??'—',m?.d??'—'].map(value=>String(value??''));
+  return [tsReportStation(f,context.targetName),f.designX,f.measuredX,m?.dx??'—',f.designY,f.measuredY,m?.dy??'—',m?.dx??'—',m?.dy??'—',m?.d??'—'].map(value=>String(value??''));
 }
 export function tsCellLines(value){
   return String(value).split('\n').flatMap(paragraph=>{const lines=[];let line='',width=0;for(const character of Array.from(paragraph)){const size=/[\x20-\x7e]/.test(character)&&!/[WM@%]/.test(character) ? 0.6 : 1;if(line&&width+size>7){lines.push(line);line='';width=0;}line+=character;width+=size;}lines.push(line);return lines;});
@@ -227,7 +235,7 @@ export function tsRowHeight(context){return Math.max(3.8,...tsReportCells(contex
 
 /** Excel-style quoted TSV, including embedded tabs/newlines and a trailing line terminator. */
 export function parseReportPaste(value) {
-  if (typeof value !== 'string' || value.length > 2 * 1024 * 1024) fail('貼り付け内容が大きすぎるか、文字列ではありません。');
+  if (typeof value !== 'string' || value.length > 2 * 1024 * 1024) fail('貼り付ける内容は2MiB以内にしてください。');
   const input = value.replace(/\r\n?/g, '\n'), rows = [];
   let row = [], cell = '', quoted = false, closed = false;
   const pushCell = () => { row.push(cell); cell = ''; closed = false; };
@@ -240,7 +248,7 @@ export function parseReportPaste(value) {
     } else if (char === '\t') pushCell();
     else if (char === '\n') { pushCell(); rows.push(row); row = []; }
     else if (char === '"' && cell === '' && !closed) quoted = true;
-    else { if (closed) fail('貼り付けた表の引用符が不正です。'); cell += char; }
+    else { if (closed) fail('貼り付けた表の引用符の位置が正しくありません。'); cell += char; }
   }
   if (quoted) fail('貼り付けた表の引用符が閉じられていません。');
   if (row.length || cell || !input.endsWith('\n')) { pushCell(); rows.push(row); }

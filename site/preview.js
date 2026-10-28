@@ -101,7 +101,7 @@ export function createPreviewViewer({onDocumentMove=()=>{}}={}) {
     const position={x:frame.contentWindow?.scrollX||0,y:frame.contentWindow?.scrollY||0};
     const token=begin('document',title,caption,element);
     documentFrame=frame;frameParent=parent;frameNext=next;frameStyle=style;frameScroll=position;
-    placeholder=document.createElement('div');placeholder.className='output-preview-placeholder';placeholder.style.height=`${frame.getBoundingClientRect().height}px`;placeholder.textContent='全画面で確認中です。閉じるとこの位置へ戻ります。';
+    placeholder=document.createElement('div');placeholder.className='output-preview-placeholder';placeholder.style.height=`${frame.getBoundingClientRect().height}px`;placeholder.textContent='全画面で表示中です。閉じるとここに戻ります。';
     frame.before(placeholder);frame.classList.add('preview-document');frame.style.removeProperty('height');
     frameLoad=async()=>{
       const doc=frame.contentDocument;
@@ -121,7 +121,7 @@ export function createPreviewViewer({onDocumentMove=()=>{}}={}) {
         }
         fit();
       }
-      catch(error){if(token===revision&&frame.contentDocument===doc){get('previewCaption').textContent=`表示の準備に失敗しました：${error.message}`;controls(false);}}
+      catch(error){if(token===revision&&frame.contentDocument===doc){get('previewCaption').textContent=`表示できません：${error.message}`;controls(false);}}
     };
     frame.addEventListener('load',frameLoad);stage.replaceChildren(frame);onDocumentMove(frame);void frameLoad();get('closePreview').focus({preventScroll:true});
   }

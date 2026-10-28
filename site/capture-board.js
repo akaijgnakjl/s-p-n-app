@@ -25,7 +25,7 @@ export function resolveCaptureBoard(project, recordId, slot, {board, noteMode} =
   if(target.useCase==='TS出来形(バリアフリー)')result=tsCaptureBoard(result,{route:group?.kind==='路線'?group.name:'',station:record.reportFields.station||result.values.location||(/^SP\s*\d/i.test(target.name)?target.name:'')});
   if(isTrial(target.useCase))result.values.point='';
   const mode = noteMode || recordNoteMode(target,record);
-  if (!['auto','manual'].includes(mode)) throw new Error('黒板の自動入力指定が不正です。');
+  if (!['auto','manual'].includes(mode)) throw new Error('黒板の自動入力の設定が正しくありません。');
   if (isTrial(target.useCase) && mode === 'auto') result.values.note = automaticNote(target.useCase,record.category,slot);
   return {board:result,noteMode:mode};
 }

@@ -105,15 +105,15 @@ export function sanitizeSession(project, raw) {
     if (kind === '下書き') hasInvalidDrafts = true;
     const count = issueCounts[kind]++;
     if (count < 100) issues.push(`${kind}: ${message}`);
-    else if (count === 100) issues.push(`${kind}: ほかにも復元できない項目があります。保存前の値を確認してください。`);
+    else if (count === 100) issues.push(`${kind}: ほかにも復元できない項目があります。`);
   }
   const result = () => ({ view, drafts, issues, hasInvalidDrafts });
   if (raw === undefined || raw === null) return result();
-  if (!plain(raw) || poisoned(raw)) { issue('下書き', '一時作業の形式が正しくありません。'); return result(); }
+  if (!plain(raw) || poisoned(raw)) { issue('下書き', '下書きの形式が正しくありません。'); return result(); }
   try { rawSize(raw); }
-  catch (error) { issue('下書き', error.message === 'oversize' ? '一時作業全体が2MiBを超えています。値は切り詰めず、復元できる項目だけを保持しました。' : '一時作業に保存できない構造・深さ・項目数があります。'); }
+  catch (error) { issue('下書き', error.message === 'oversize' ? '下書きが2MiBを超えたため、一部だけ復元しました。' : '下書きに復元できない内容があります。'); }
   if (get(raw, 'projectId') !== undefined && get(raw, 'projectId') !== project?.id) {
-    issue('下書き', '別の工事の一時作業は復元できません。'); return result();
+    issue('下書き', '別の工事の下書きは復元できません。'); return result();
   }
 
   const groups = new Set((project?.groups ?? []).map(group => group.id));
@@ -139,32 +139,32 @@ export function sanitizeSession(project, raw) {
     const value = get(source, key);
     if (value === undefined) return fallback;
     if (value === '__all__' || value === '' || (typeof value === 'string' && groups.has(value))) return value;
-    issue('表示', '存在しない所属の表示条件を解除しました。'); return fallback;
+    issue('表示', '見つからない所属の絞り込みを解除しました。'); return fallback;
   }
   function id(source, key, index, label) {
     const value = get(source, key);
     if (value === undefined || value === '' || value === null) return '';
     if (typeof value === 'string' && index.has(value)) return value;
-    issue('表示', `${label}の参照が見つからないため解除しました。`); return '';
+    issue('表示', `${label}が見つからないため解除しました。`); return '';
   }
   function entries(value, kind, label) {
     if (value === undefined || value === null) return [];
-    if (!Array.isArray(value)) { issue(kind, `${label}の一覧形式が正しくありません。`); return []; }
-    if (value.length > SESSION_LIMITS.entryScan) issue(kind, `${label}の項目数が上限を超えています。超過分は復元しません。`);
+    if (!Array.isArray(value)) { issue(kind, `${label}の形式が正しくありません。`); return []; }
+    if (value.length > SESSION_LIMITS.entryScan) issue(kind, `${label}が上限を超えたため、超えた分は復元しません。`);
     return Array.from({ length: Math.min(value.length, SESSION_LIMITS.entryScan) }, (_, index) => get(value, String(index)));
   }
 
   const inputView = get(raw, 'view');
-  if (inputView !== undefined && inputView !== null && (!plain(inputView) || poisoned(inputView))) issue('表示', '画面状態の形式が正しくないため既定値へ戻しました。');
+  if (inputView !== undefined && inputView !== null && (!plain(inputView) || poisoned(inputView))) issue('表示', '画面状態が正しくないため既定値へ戻しました。');
   else if (inputView) {
     view.mode = enumeration(inputView, 'mode', MODES, view.mode, '作業画面');
     view.activeGroupId = group(inputView, 'activeGroupId');
-    view.activeTargetId = id(inputView, 'activeTargetId', targets, '対象');
+    view.activeTargetId = id(inputView, 'activeTargetId', targets, '記録対象');
     view.activeRecordId = id(inputView, 'activeRecordId', records, '作業記録');
     if (view.activeRecordId) {
       const owner = records.get(view.activeRecordId).target.id;
       if (!view.activeTargetId) view.activeTargetId = owner;
-      else if (owner !== view.activeTargetId) { view.activeRecordId = ''; issue('表示', '対象と一致しない作業記録を解除しました。'); }
+      else if (owner !== view.activeTargetId) { view.activeRecordId = ''; issue('表示', '記録対象と合わない作業記録の選択を解除しました。'); }
     }
     view.useCaseFilter = enumeration(inputView, 'useCaseFilter', ['', ...USES], '', '用途の表示条件');
     view.onlyMissing = boolean(inputView, 'onlyMissing', false, '不足の表示条件');
@@ -176,7 +176,7 @@ export function sanitizeSession(project, raw) {
     if (exported !== undefined && exported !== null) {
       const normalized = isoDateTime(exported);
       if (normalized) view.lastExportAt = normalized;
-      else { view.zipDirty = true; issue('表示', 'ZIP保存日時が不正なため保存状態を未確認へ戻しました。'); }
+      else { view.zipDirty = true; issue('表示', 'ZIPの保存日時が不明なため、未保存として扱います。'); }
     }
 
     const organize = get(inputView, 'organize');
@@ -186,7 +186,7 @@ export function sanitizeSession(project, raw) {
         const query = get(organize, 'query');
         if (query !== undefined) {
           if (text(query, 300, false)) view.organize.query = query;
-          else issue('表示', '検索語が不正なため解除しました。');
+          else issue('表示', '検索語を解除しました。');
         }
         view.organize.useCase = enumeration(organize, 'useCase', ['', ...USES], '', '写真整理の用途');
         const definitions = view.organize.useCase ? [USE_CASES[view.organize.useCase]] : Object.values(USE_CASES);
@@ -202,7 +202,7 @@ export function sanitizeSession(project, raw) {
     const disclosureKeys = new Set();
     for (const entry of entries(get(inputView, 'disclosures'), '表示', '開閉状態')) {
       const key = get(entry, '0'), expanded = get(entry, '1');
-      if (!Array.isArray(entry) || entry.length !== 2 || typeof key !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_:-]{0,119}$/.test(key) || POISON.has(key) || typeof expanded !== 'boolean' || disclosureKeys.has(key)) { issue('表示', '不正または重複した開閉状態を除外しました。'); continue; }
+      if (!Array.isArray(entry) || entry.length !== 2 || typeof key !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_:-]{0,119}$/.test(key) || POISON.has(key) || typeof expanded !== 'boolean' || disclosureKeys.has(key)) { issue('表示', '開閉状態の一部を復元しませんでした。'); continue; }
       if (view.disclosures.length >= SESSION_LIMITS.disclosureKeys) { issue('表示', '開閉状態は100件以内で復元します。'); break; }
       disclosureKeys.add(key); view.disclosures.push([key, expanded]);
     }
@@ -212,8 +212,8 @@ export function sanitizeSession(project, raw) {
       else for (const key of Object.keys(view.scroll)) {
         const value = get(scroll, key);
         if (value === undefined) continue;
-        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) issue('表示', '不正なスクロール位置を解除しました。');
-        else { view.scroll[key] = Math.min(value, SESSION_LIMITS.scroll); if (value > SESSION_LIMITS.scroll) issue('表示', 'スクロール位置を復元上限に調整しました。'); }
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) issue('表示', 'スクロール位置の一部を戻しました。');
+        else { view.scroll[key] = Math.min(value, SESSION_LIMITS.scroll); if (value > SESSION_LIMITS.scroll) issue('表示', 'スクロール位置を上限に合わせました。'); }
       }
     }
     const output = get(inputView, 'output');
@@ -226,7 +226,7 @@ export function sanitizeSession(project, raw) {
         view.output.initialized = boolean(output, 'initialized', false, '出力範囲の選択状態');
         const selected = new Set();
         for (const recordId of entries(get(output, 'selectedIds'), '表示', '出力記録')) {
-          if (typeof recordId !== 'string' || !records.has(recordId) || selected.has(recordId)) { issue('表示', '不正または重複した出力記録を除外しました。'); continue; }
+          if (typeof recordId !== 'string' || !records.has(recordId) || selected.has(recordId)) { issue('表示', '出力記録の一部を復元しませんでした。'); continue; }
           if (selected.size >= SESSION_LIMITS.selectedRecordIds) { issue('表示', '出力記録は4000件以内で復元します。'); break; }
           selected.add(recordId); view.output.selectedIds.push(recordId);
         }
@@ -237,43 +237,43 @@ export function sanitizeSession(project, raw) {
   let bytes = encodedSize({ view, drafts });
   function append(key, entry) {
     const cost = encodedSize(entry) + (drafts[key].length ? 1 : 0);
-    if (bytes + cost > SESSION_LIMITS.totalBytes) { issue('下書き', `${key}の一部が一時作業全体の2MiB上限を超えるため復元できません。値は切り詰めていません。`); return; }
+    if (bytes + cost > SESSION_LIMITS.totalBytes) { issue('下書き', `${key}の一部は下書きの上限2MiBを超えるため復元しません。`); return; }
     drafts[key].push(entry); bytes += cost;
   }
   const inputDrafts = get(raw, 'drafts');
   if (inputDrafts === undefined || inputDrafts === null) return result();
-  if (!plain(inputDrafts) || poisoned(inputDrafts)) { issue('下書き', '編集中の値の形式が正しくありません。'); return result(); }
+  if (!plain(inputDrafts) || poisoned(inputDrafts)) { issue('下書き', '下書きの形式が正しくありません。'); return result(); }
   function draftEntries(key, validate) {
     const seen = new Set();
     for (const entry of entries(get(inputDrafts, key), '下書き', key)) {
       const id = get(entry, '0'), value = get(entry, '1');
-      if (!Array.isArray(entry) || entry.length !== 2 || typeof id !== 'string' || seen.has(id)) { issue('下書き', `${key}に不正または重複した項目があります。`); continue; }
+      if (!Array.isArray(entry) || entry.length !== 2 || typeof id !== 'string' || seen.has(id)) { issue('下書き', `${key}に復元できない項目があります。`); continue; }
       seen.add(id);
       try { append(key, [id, validate(id, value)]); }
       catch (error) { issue('下書き', `${key}の項目を復元できません（${error.message}）。`); }
     }
   }
   draftEntries('names', (targetId, value) => {
-    if (!targets.has(targetId) || !text(value, SESSION_LIMITS.nameChars, false)) throw new Error('対象の参照または300文字上限が不正');
+    if (!targets.has(targetId) || !text(value, SESSION_LIMITS.nameChars, false)) throw new Error('記録対象がないか、300文字を超えています');
     return value;
   });
   draftEntries('reports', (idKey, value) => {
     const at = idKey.indexOf(':'), recordId = idKey.slice(0, at), key = idKey.slice(at + 1), context = records.get(recordId);
-    if (at < 1 || !context || !USE_CASES[context.target.useCase].reportColumns.some(column => column.key === key) || !text(value, SESSION_LIMITS.draftTextChars)) throw new Error('調書の参照・項目または10000文字上限が不正');
+    if (at < 1 || !context || !USE_CASES[context.target.useCase].reportColumns.some(column => column.key === key) || !text(value, SESSION_LIMITS.draftTextChars)) throw new Error('調書の項目がないか、10000文字を超えています');
     return value;
   });
   draftEntries('boards', (recordId, value) => {
     const context = records.get(recordId);
-    if (!context || context.target.useCase === 'MMS' || !plain(value) || poisoned(value) || typeof get(value, 'applyBoard') !== 'boolean' || !['auto', 'manual'].includes(get(value, 'noteMode'))) throw new Error('黒板の参照・合成設定が不正、またはMMS');
+    if (!context || context.target.useCase === 'MMS' || !plain(value) || poisoned(value) || typeof get(value, 'applyBoard') !== 'boolean' || !['auto', 'manual'].includes(get(value, 'noteMode'))) throw new Error('黒板の設定が合いません');
     const board = get(value, 'board');
-    if (!plain(board) || poisoned(board) || Object.keys(board).some(key => !['templateId', 'values', 'legacyColor'].includes(key))) throw new Error('黒板の構造が不正');
+    if (!plain(board) || poisoned(board) || Object.keys(board).some(key => !['templateId', 'values', 'legacyColor'].includes(key))) throw new Error('黒板の形式が合いません');
     const values = get(board, 'values');
-    if (!plain(values) || poisoned(values) || Object.keys(values).some(key => !BOARD_FIELD_KEYS.includes(key))) throw new Error('黒板に許可されていない項目');
+    if (!plain(values) || poisoned(values) || Object.keys(values).some(key => !BOARD_FIELD_KEYS.includes(key))) throw new Error('黒板にない項目があります');
     const legacyColor = get(board, 'legacyColor');
     const normalized = createBoard(get(board, 'templateId'), {}, legacyColor === undefined ? {} : { legacyColor });
     for (const key of Object.keys(values)) {
       const field = get(values, key);
-      if (!text(field, SESSION_LIMITS.draftTextChars)) throw new Error('黒板の値または10000文字上限が不正');
+      if (!text(field, SESSION_LIMITS.draftTextChars)) throw new Error('黒板の値が10000文字を超えています');
       normalized.values[key] = field;
     }
     return { board: normalized, applyBoard: get(value, 'applyBoard'), noteMode: get(value, 'noteMode') };
@@ -281,23 +281,23 @@ export function sanitizeSession(project, raw) {
   const paste = get(inputDrafts, 'pendingPaste');
   if (paste !== undefined && paste !== null) {
     try {
-      if (!plain(paste) || poisoned(paste) || get(paste, 'projectId') !== project?.id) throw new Error('工事の参照が不正');
+      if (!plain(paste) || poisoned(paste) || get(paste, 'projectId') !== project?.id) throw new Error('別の工事の下書きです');
       const settings = get(paste, 'settings');
-      if (!plain(settings) || poisoned(settings)) throw new Error('貼り付け設定が不正');
+      if (!plain(settings) || poisoned(settings)) throw new Error('貼り付け設定が正しくありません');
       const inputRecords = get(settings, 'recordIds'), inputKeys = get(settings, 'keys');
-      if (!Array.isArray(inputRecords) || !inputRecords.length || inputRecords.length > SESSION_LIMITS.selectedRecordIds) throw new Error('貼り付け先の記録が不正');
+      if (!Array.isArray(inputRecords) || !inputRecords.length || inputRecords.length > SESSION_LIMITS.selectedRecordIds) throw new Error('貼り付け先の記録が見つかりません');
       const recordIds = arrayValues(inputRecords);
-      if (new Set(recordIds).size !== recordIds.length || recordIds.some(recordId => typeof recordId !== 'string' || !records.has(recordId))) throw new Error('貼り付け先の記録が不正');
-      if (!Array.isArray(inputKeys) || !inputKeys.length || inputKeys.length > 20) throw new Error('貼り付け先の調書項目が不正');
+      if (new Set(recordIds).size !== recordIds.length || recordIds.some(recordId => typeof recordId !== 'string' || !records.has(recordId))) throw new Error('貼り付け先の記録が見つかりません');
+      if (!Array.isArray(inputKeys) || !inputKeys.length || inputKeys.length > 20) throw new Error('貼り付け先の調書項目が合いません');
       const keys = arrayValues(inputKeys);
-      if (new Set(keys).size !== keys.length || keys.some(key => typeof key !== 'string' || !recordIds.every(recordId => USE_CASES[records.get(recordId).target.useCase].reportColumns.some(column => column.key === key)))) throw new Error('貼り付け先の調書項目が不正');
+      if (new Set(keys).size !== keys.length || keys.some(key => typeof key !== 'string' || !recordIds.every(recordId => USE_CASES[records.get(recordId).target.useCase].reportColumns.some(column => column.key === key)))) throw new Error('貼り付け先の調書項目が合いません');
       const startRow = get(settings, 'startRow') ?? 0, startCol = get(settings, 'startCol') ?? 0;
-      if (!Number.isSafeInteger(startRow) || !Number.isSafeInteger(startCol) || startRow < 0 || startCol < 0 || startRow >= recordIds.length || startCol >= keys.length) throw new Error('貼り付け開始セルが不正');
+      if (!Number.isSafeInteger(startRow) || !Number.isSafeInteger(startCol) || startRow < 0 || startCol < 0 || startRow >= recordIds.length || startCol >= keys.length) throw new Error('貼り付け開始セルが正しくありません');
       const value = get(paste, 'text') ?? get(settings, 'text');
-      if (!text(value, SESSION_LIMITS.pasteBytes) || encoder.encode(value).byteLength > SESSION_LIMITS.pasteBytes) throw new Error('貼り付けテキストの1MiB上限が不正');
+      if (!text(value, SESSION_LIMITS.pasteBytes) || encoder.encode(value).byteLength > SESSION_LIMITS.pasteBytes) throw new Error('貼り付け内容が1MiBを超えています');
       const normalized = { projectId: project.id, settings: { recordIds: [...recordIds], keys: [...keys], startRow, startCol }, text: value };
       const cost = encodedSize(normalized) - 4;
-      if (bytes + cost > SESSION_LIMITS.totalBytes) throw new Error('一時作業全体の2MiB上限を超過、値は切り詰めていません');
+      if (bytes + cost > SESSION_LIMITS.totalBytes) throw new Error('下書きの上限2MiBを超えています');
       drafts.pendingPaste = normalized;
     } catch (error) { issue('下書き', `貼り付けの下書きを復元できません（${error.message}）。`); }
   }

@@ -55,7 +55,8 @@ export function createToastStore({ duration = 6000, maxToasts = 3, timers = real
     if (destroyed) return null;
     if (typeof message !== 'string' || !TONES.has(tone)) throw new Error('通知の文言・種類を確認してください。');
     if (!message.trim()) return null;
-    persistent = Boolean(persistent || tone === 'warning' || tone === 'error');
+    // エラー・注意も含めて自動で隠す。見逃した通知は「通知」ボタンの一覧で確認する。
+    persistent = Boolean(persistent);
     const duplicate = records.find(record => record.messages.some(item => item.text === message && item.tone === tone));
     if (duplicate) {
       duplicate.messages.find(item => item.text === message && item.tone === tone).count++;
@@ -121,11 +122,11 @@ export function createToastStore({ duration = 6000, maxToasts = 3, timers = real
 /** All legacy controller IDs stay on stable nodes; visual messages have one announcer per priority. */
 export function renderNotificationShell() {
   const close = '<button type="button" class="ui-notification-dismiss" data-notification-dismiss data-notification-control aria-label="この通知を閉じる">×</button>';
-  return `<section id="notificationCenter" class="ui-notifications" popover="manual" aria-label="作業の通知" hidden><div id="notificationToasts" class="ui-toast-stack"><div id="notice" class="ui-toast" aria-live="off" hidden><div data-notification-messages></div>${close}</div></div><div id="storageNotice" class="ui-toast" data-tone="warning" aria-live="off" hidden><div data-notification-messages></div>${close}</div><div id="draftNotice" class="ui-notification-drafts" aria-live="off" hidden><p data-notification-draft-text></p><div class="ui-notification-draft-actions" data-notification-draft-actions></div></div><div id="progressNotice" class="ui-notification-progress" aria-live="off" hidden><span data-notification-progress></span><button type="button" id="cancelOperation" data-notification-control hidden>処理を取り消す</button></div><div id="resumeStatus" class="ui-save-status" data-state="idle" aria-live="off" hidden><span id="resumeStatusText"></span><button type="button" id="retrySessionSave" data-notification-control hidden>一時保存を再試行</button></div><span id="notificationStatus" class="ui-notification-announcer" role="status" aria-atomic="true"></span><span id="notificationAlert" class="ui-notification-announcer" role="alert" aria-atomic="true"></span></section>`;
+  return `<section id="notificationCenter" class="ui-notifications" popover="manual" aria-label="作業の通知" hidden><div id="notificationHistory" class="ui-notification-history" hidden><div class="ui-notification-history-head"><strong>通知の一覧</strong><button type="button" class="button" data-notification-history-close>閉じる</button></div><ol data-notification-history-list></ol></div><div id="notificationToasts" class="ui-toast-stack"><div id="notice" class="ui-toast" aria-live="off" hidden><div data-notification-messages></div>${close}</div></div><div id="storageNotice" class="ui-toast" data-tone="warning" aria-live="off" hidden><div data-notification-messages></div>${close}</div><div id="draftNotice" class="ui-notification-drafts" aria-live="off" hidden><p data-notification-draft-text></p><div class="ui-notification-draft-actions" data-notification-draft-actions></div></div><div id="progressNotice" class="ui-notification-progress" aria-live="off" hidden><span data-notification-progress></span><button type="button" id="cancelOperation" data-notification-control hidden>処理を取り消す</button></div><div id="resumeStatus" class="ui-save-status" data-state="idle" aria-live="off" hidden><span id="resumeStatusText"></span><button type="button" id="retrySessionSave" data-notification-control hidden>一時保存を再試行</button></div><span id="notificationStatus" class="ui-notification-announcer" role="status" aria-atomic="true"></span><span id="notificationAlert" class="ui-notification-announcer" role="alert" aria-atomic="true"></span></section>`;
 }
 
 /** Mount after renderNotificationShell. Existing retry/cancel onclick handlers are never replaced. */
-export function createNotifications({ root = globalThis.document, duration = 6000, maxToasts = 3, timers = realTimers } = {}) {
+export function createNotifications({ root = globalThis.document, duration = 2000, maxToasts = 3, timers = realTimers } = {}) {
   const doc = root.nodeType === 9 ? root : root.ownerDocument;
   const find = id => root.nodeType === 9 ? root.getElementById(id) : root.id === id ? root : root.querySelector(`#${id}`);
   const region = find('notificationCenter'), stack = find('notificationToasts'), stable = find('notice');
@@ -136,6 +137,10 @@ export function createNotifications({ root = globalThis.document, duration = 600
   const win = doc.defaultView ?? globalThis, nodes = new Map(), dialogOrder = new Map(), cardSignatures = new WeakMap();
   const cleanups = [];
   let order = 0, destroyed = false, storageMessage = '', storageDismissed = false, sessionFailed = false, draftSignature = '';
+  // 一覧（任意の要素）。古い固定領域にも対応するため、無ければ一覧なしで動く。
+  const history = find('notificationHistory'), historyList = history?.querySelector('[data-notification-history-list]'), historyButton = find('notificationHistoryButton');
+  const log = [], peekTimers = new Map();
+  let historyOpen = false;
   let popoverSupported = typeof region.showPopover === 'function', layoutFrame = null;
   const announcementVersion = { status: 0, alert: 0 };
   const listen = (node, event, callback, options) => { node.addEventListener(event, callback, options); cleanups.push(() => node.removeEventListener(event, callback, options)); };
@@ -183,7 +188,11 @@ export function createNotifications({ root = globalThis.document, duration = 600
       if (popoverSupported && isPopoverOpen()) region.hidePopover();
       host.append(region);
     }
-    const visible = nodes.size > 0 || !storage.hidden || !drafts.hidden || !progress.hidden || !session.hidden;
+    // 保存状況・下書き・端末保存の注意は、変化した時に2秒だけ見せ、あとは一覧を開いた時だけ出す。
+    const shown = node => !node.hidden && (historyOpen || node.dataset.peek === '1');
+    const visible = historyOpen || nodes.size > 0 || shown(storage) || shown(drafts) || !progress.hidden || shown(session);
+    region.dataset.history = historyOpen ? 'open' : 'closed';
+    if (history) history.hidden = !historyOpen;
     region.hidden = !visible;
     layout(dialog);
     if (!visible) { if (popoverSupported && isPopoverOpen()) region.hidePopover(); return; }
@@ -240,7 +249,34 @@ export function createNotifications({ root = globalThis.document, duration = 600
     refresh();
   } });
   const cardFor = target => target?.closest?.('[data-toast-id]');
+  const toneText = { success: '完了', info: '案内', warning: '注意', error: 'エラー' };
+  function renderHistory() {
+    if (historyButton) { historyButton.textContent = log.length ? `通知 ${log.length}` : '通知'; historyButton.setAttribute('aria-expanded', String(historyOpen)); }
+    if (!historyList || !historyOpen) return;
+    historyList.replaceChildren(...(log.length ? [...log].reverse() : [{ text: 'まだ通知はありません。', tone: 'info', at: '' }]).map(entry => {
+      const item = doc.createElement('li'); item.dataset.tone = entry.tone;
+      item.textContent = entry.at ? `${entry.at}　${toneText[entry.tone]}：${entry.text}` : entry.text;
+      return item;
+    }));
+  }
+  function record(text, tone) {
+    if (!text) return;
+    const now = new Date(), at = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const last = log[log.length - 1];
+    if (last && last.text === text && last.tone === tone) last.at = at; else log.push({ text, tone, at });
+    if (log.length > 100) log.shift();
+    renderHistory();
+  }
+  function peek(node) {
+    node.dataset.peek = '1';
+    timers.clearTimeout(peekTimers.get(node));
+    peekTimers.set(node, timers.setTimeout(() => { delete node.dataset.peek; peekTimers.delete(node); refresh(); }, duration));
+  }
+  function setHistoryOpen(open) { if (destroyed) return; historyOpen = Boolean(open); renderHistory(); refresh(); }
+  if (historyButton) listen(historyButton, 'click', () => setHistoryOpen(!historyOpen));
+  renderHistory();
   listen(region, 'click', event => {
+    if (event.target.closest?.('[data-notification-history-close]')) { setHistoryOpen(false); return; }
     const close = event.target.closest?.('[data-notification-dismiss]');
     if (!close) return;
     const card = cardFor(close);
@@ -288,6 +324,7 @@ export function createNotifications({ root = globalThis.document, duration = 600
     const changed = message !== storageMessage;
     storageMessage = message; storageDismissed = false; storage.hidden = !message;
     if (message) paintCard(storage, { tone: 'warning', messages: [{ text: message, tone: 'warning', count: 1 }] });
+    if (changed && message) { record(message, 'warning'); peek(storage); }
     refresh(); if (changed && message) announce(message, 'warning');
   }
   function setSessionStatus({ visible = true, state = 'saved', text = '' } = {}) {
@@ -296,14 +333,18 @@ export function createNotifications({ root = globalThis.document, duration = 600
     const changed = session.dataset.state !== state || sessionText.textContent !== text;
     session.hidden = !visible; session.dataset.state = state; sessionText.textContent = text; sessionText.title = text;
     retry.hidden = !visible || state !== 'failed';
+    const recovered = visible && state === 'saved' && sessionFailed;
     if (!visible) sessionFailed = false;
     if (visible && state === 'failed') sessionFailed = true;
+    if (visible && state === 'failed' && changed) { record(text, 'error'); peek(session); }
+    if (recovered) { record('一時保存を再開しました。', 'success'); peek(session); }
     refresh();
     if (visible && state === 'failed' && changed) announce(text, 'error');
-    else if (visible && state === 'saved' && sessionFailed) { sessionFailed = false; announce('画面・下書きの一時保存を再開しました。', 'success'); }
+    else if (recovered) { sessionFailed = false; announce('一時保存を再開しました。', 'success'); }
   }
   function setDraftNotice({ text = '', actionsHTML = '', visible = true } = {}) {
     if (destroyed) return;
+    if (visible && drafts.hidden) { record(text, 'info'); peek(drafts); }
     drafts.hidden = !visible;
     const signature = JSON.stringify([text, actionsHTML]);
     if (signature !== draftSignature) {
@@ -327,10 +368,12 @@ export function createNotifications({ root = globalThis.document, duration = 600
   function destroy() {
     if (destroyed) return;
     destroyed = true; store.destroy(); cleanups.forEach(cleanup => cleanup());
+    for (const timer of peekTimers.values()) timers.clearTimeout(timer); peekTimers.clear();
     if (layoutFrame !== null) win.cancelAnimationFrame?.(layoutFrame);
     if (popoverSupported && isPopoverOpen()) region.hidePopover();
     region.hidden = true;
   }
   refresh();
-  return { notify: store.notify, clearToasts: store.clear, setStorageWarning, setSessionStatus, setDraftNotice, showProgress, clearProgress, refresh, destroy, getState: store.getState };
+  const notify = (message, options = {}) => { const id = store.notify(message, options); if (typeof message === 'string' && message.trim()) record(message.trim(), options.tone || 'success'); return id; };
+  return { notify, openHistory: () => setHistoryOpen(true), closeHistory: () => setHistoryOpen(false), getHistory: () => log.map(entry => ({ ...entry })), clearToasts: store.clear, setStorageWarning, setSessionStatus, setDraftNotice, showProgress, clearProgress, refresh, destroy, getState: store.getState };
 }

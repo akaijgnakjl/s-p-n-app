@@ -1,6 +1,6 @@
 // Replaced by the static build. The versioned module locates the app's root scope.
 const APP_VERSION = '0.9.3';
-const BUILD_ID = '26c079fde81351dbd942';
+const BUILD_ID = 'b4bb4ffaf55ac05acedb';
 const APP_BASE_RELATIVE = './';
 const APP_BASE = new URL(APP_BASE_RELATIVE, import.meta.url);
 
@@ -12,7 +12,7 @@ function requestWorker(worker, data, timeout = 10000) {
       channel.port1.close();
       error ? reject(error) : resolve(result);
     };
-    const timer = setTimeout(() => finish(new Error('圏外の準備状態を確認できません。もう一度確認してください。')), timeout);
+    const timer = setTimeout(() => finish(new Error('圏外の準備状態を確認できません。もう一度お試しください。')), timeout);
     channel.port1.onmessage = event => event.data?.error ? finish(new Error(event.data.error)) : finish(null, event.data);
     try { worker.postMessage(data, [channel.port2]); }
     catch (error) { finish(error); }
@@ -27,7 +27,7 @@ function settledWorker(worker, { activated = false } = {}) {
       error ? reject(error) : resolve();
     };
     const inspect = () => {
-      if (worker.state === 'redundant') finish(new Error('新しいアプリ資材を揃えられませんでした。現在の版を使い、通信できる場所で再度お試しください。'));
+      if (worker.state === 'redundant') finish(new Error('新しい版を準備できませんでした。通信できる場所で再度お試しください。'));
       else if (worker.state === 'activated' || (!activated && worker.state === 'installed')) finish();
     };
     const timer = setTimeout(() => finish(new Error('圏外の準備が完了しませんでした。通信できる場所で再度お試しください。')), 30000);
@@ -58,13 +58,13 @@ export function createOfflineManager({ onChange = () => {} } = {}) {
   function publish(patch = {}) {
     state = { ...state, ...patch, online: globalThis.navigator?.onLine !== false };
     state.status = !supported ? 'unsupported' : busy || (state.reloadRequired ? 'reload-ready' : state.updateAvailable ? 'update-ready' : state.ready ? 'ready' : state.error ? 'error' : 'not-ready');
-    if (!supported) state.message = '圏外の準備は HTTPS または localhost の対応ブラウザーで行ってください。';
-    else if (busy === 'preparing') state.message = '圏外で使うためのアプリ資材を準備しています…';
-    else if (busy === 'checking') state.message = 'アプリの更新と圏外の準備状態を確認しています…';
-    else if (busy === 'applying') state.message = '準備済みの更新を有効にしています…';
-    else if (state.reloadRequired) state.message = '新しい版を準備しました。作業ZIPを保存してから、明示的に再読み込みしてください。';
-    else if (state.ready) state.message = `圏外で使う準備が完了しました（${state.preparedVersion}）。${state.updateAvailable ? '新しい版を準備しています。作業ZIPを保存してから更新できます。' : ''}`;
-    else state.message = state.error || (state.online ? '圏外で使う準備はまだ完了していません。通信できる場所で準備してください。' : '圏外で起動できる準備を確認できません。通信できる場所で準備してください。');
+    if (!supported) state.message = '圏外の準備はHTTPS接続の対応ブラウザーで行ってください。';
+    else if (busy === 'preparing') state.message = '圏外で使う準備をしています…';
+    else if (busy === 'checking') state.message = '更新と圏外の準備を確認しています…';
+    else if (busy === 'applying') state.message = '更新を適用しています…';
+    else if (state.reloadRequired) state.message = '新しい版を準備しました。作業ZIPを保存してから再読み込みしてください。';
+    else if (state.ready) state.message = `圏外で使えます（${state.preparedVersion}）。${state.updateAvailable ? '新しい版を準備中です。作業ZIPを保存してから更新してください。' : ''}`;
+    else state.message = state.error || (state.online ? '圏外で使う準備ができていません。通信できる場所で準備してください。' : '圏外で使えるか確認できません。通信できる場所で準備してください。');
     if (!destroyed) onChange({ ...state });
     return { ...state };
   }
@@ -74,7 +74,7 @@ export function createOfflineManager({ onChange = () => {} } = {}) {
     let wasActivated = worker.state === 'activated';
     const listener = () => {
       if (worker.state === 'activated') wasActivated = true;
-      if (worker.state === 'redundant' && !wasActivated) publish({ error: '新しいアプリ資材を揃えられませんでした。現在の版を使い、通信できる場所で再度お試しください。' });
+      if (worker.state === 'redundant' && !wasActivated) publish({ error: '新しい版を準備できませんでした。通信できる場所で再度お試しください。' });
       if (!destroyed) void refresh();
     };
     worker.addEventListener('statechange', listener);
@@ -122,7 +122,7 @@ export function createOfflineManager({ onChange = () => {} } = {}) {
 
   async function operation(status, action) {
     if (!supported) return publish();
-    if (busy) throw new Error('圏外の準備または更新を処理中です。完了してからお試しください。');
+    if (busy) throw new Error('準備または更新の処理中です。完了まで待ってください。');
     busy = status;
     publish({ error: '' });
     try { await action(); }
@@ -156,7 +156,7 @@ export function createOfflineManager({ onChange = () => {} } = {}) {
         const worker = registration.installing;
         if (worker) await settledWorker(worker);
         if (!registration.active && worker) await settledWorker(worker, { activated: true });
-        if (!registration.active) throw new Error('圏外の準備を有効にできませんでした。通信できる場所でもう一度準備してください。');
+        if (!registration.active) throw new Error('圏外の準備ができませんでした。通信できる場所でやり直してください。');
         await requestWorker(registration.active, { type: 'PREPARE_OFFLINE' }, 30000);
       });
     },
@@ -175,10 +175,10 @@ export function createOfflineManager({ onChange = () => {} } = {}) {
         const waiting = registration?.waiting;
         if (!waiting) {
           if (state.reloadRequired) return;
-          throw new Error('適用できる準備済みの更新はありません。');
+          throw new Error('適用できる更新はありません。');
         }
         const info = await requestWorker(waiting, { type: 'GET_OFFLINE_STATUS' });
-        if (!info.ready) throw new Error('新しい版の資材が揃っていません。通信できる場所で更新を確認してください。');
+        if (!info.ready) throw new Error('新しい版の準備が終わっていません。通信できる場所で更新を確認してください。');
         await requestWorker(waiting, { type: 'ACTIVATE_UPDATE' });
         await settledWorker(waiting, { activated: true });
       });

@@ -5,16 +5,16 @@ export function validWorkDate(value) {
   return typeof value === 'string' && (value === '' || /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value);
 }
 export function validateDateMetadata(photo) {
-  if (!validWorkDate(photo.workDate)) throw new Error('作業日は実在する年月日または空欄にしてください。');
-  if (photo.workDateStatus !== undefined && !['confirmed','unconfirmed'].includes(photo.workDateStatus)) throw new Error('作業日の確認状態が不正です。');
-  if (photo.workDateStatus === 'confirmed' && !photo.workDate) throw new Error('確認済みの作業日を入力してください。');
-  if (photo.captureSource !== undefined && !['camera','library','file','legacy'].includes(photo.captureSource)) throw new Error('画像の登録方法が不正です。');
-  if (photo.capturedAt !== undefined && (typeof photo.capturedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(photo.capturedAt) || !Number.isFinite(Date.parse(photo.capturedAt)))) throw new Error('実際の撮影日時が不正です。');
+  if (!validWorkDate(photo.workDate)) throw new Error('作業日は正しい年月日にするか、空欄にしてください。');
+  if (photo.workDateStatus !== undefined && !['confirmed','unconfirmed'].includes(photo.workDateStatus)) throw new Error('作業日の確認状態が正しくありません。');
+  if (photo.workDateStatus === 'confirmed' && !photo.workDate) throw new Error('確認済みにするには作業日を入力してください。');
+  if (photo.captureSource !== undefined && !['camera','library','file','legacy'].includes(photo.captureSource)) throw new Error('写真の登録方法が正しくありません。');
+  if (photo.capturedAt !== undefined && (typeof photo.capturedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(photo.capturedAt) || !Number.isFinite(Date.parse(photo.capturedAt)))) throw new Error('撮影日時が正しくありません。');
 }
 export function validateRecordDates(record) {
   if (record.workDateDefault === undefined) return;
   const value=record.workDateDefault;
-  if (!value || typeof value!=='object' || Array.isArray(value) || Object.keys(value).some(key=>!['value','confirmed'].includes(key)) || !validWorkDate(value.value) || typeof value.confirmed!=='boolean' || value.confirmed&&!value.value) throw new Error('次の写真の作業日の設定が不正です。');
+  if (!value || typeof value!=='object' || Array.isArray(value) || Object.keys(value).some(key=>!['value','confirmed'].includes(key)) || !validWorkDate(value.value) || typeof value.confirmed!=='boolean' || value.confirmed&&!value.value) throw new Error('次の写真の作業日設定が正しくありません。');
 }
 export function dateState(photo) { return photo.workDateStatus ?? 'legacy'; }
 export function workDateLabel(photo) {
@@ -50,7 +50,7 @@ export function setPhotoWorkDate(project,photoId,{value='',confirmed=false,sync=
   candidate.workDate=value;candidate.workDateStatus=confirmed?'confirmed':'unconfirmed';
   validateDateMetadata(candidate);
   if(sync==='work-to-board'){
-    if(!hasBoardDate(candidate.board))throw new Error('この写真の黒板形式には日付欄がありません。');
+    if(!hasBoardDate(candidate.board))throw new Error('この黒板には日付欄がありません。');
     if(!value)throw new Error('黒板へ反映する作業日を入力してください。');
     candidate.board.values.date=value;
   }

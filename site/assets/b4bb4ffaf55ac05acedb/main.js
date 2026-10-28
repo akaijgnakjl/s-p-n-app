@@ -8,12 +8,12 @@ import { materialChoices } from './materials.js';
 import {exportPhotos} from './photo-export.js';
 import {readTSScreenshot} from './ts-screenshot.js';
 import {applyTSScreenshot} from './ts-screenshot-data.js';
-import {setRouteSection,describeTargetDeletion,deleteTargets,setTSCommonFields,TS_COMMON_KEYS} from './workflow.js';
+import {setRouteSection,describeTargetDeletion,deleteTargets,setTSCommonFields,TS_COMMON_KEYS,setTSStationNotation} from './workflow.js';
 import {relinkBoardDrafts} from './board-link.js';
 import { openStorage } from './storage.js';
 import { exportWorkPackage, importWorkPackage, PACKAGE_LIMITS } from './package.js';
 import {renameProject,renameGroup,updateTarget,saveRecordBoard,savePhotoBoard,describePhotoMove,movePhoto,describePhotoDelete,deletePhoto,setReportField,describeReportPaste,applyReportPaste,setReportSection,reviewReport} from './workflow.js';
-import {reportReviewState,reportMissingFields,constructionSection,sectionLabel,STATION_NOTATIONS,getReportItemName,getReportItemNames,updateReportItemNames,visibleReportColumns} from './report-data.js';
+import {reportReviewState,reportMissingFields,constructionSection,sectionLabel,STATION_NOTATIONS,getReportItemName,getReportItemNames,updateReportItemNames,visibleReportColumns,TS_STATION_NOTATIONS} from './report-data.js';
 import {isTrial,recordNoteMode,resolveCaptureBoard} from './capture-board.js';
 import {renderReportView,renderOutputView,scopedRecords} from './ui-pc.js';
 import {buildOutputHTML,buildOutputModel} from './reports.js';
@@ -103,7 +103,7 @@ const sessionSaver=createSessionSaver({
 
 function draftCounts(){return nameDrafts.size+boardDrafts.size+reportDrafts.size+(pendingPaste?1:0);}
 function renderResumeStatus(){
-  const text=!storage?'画面・下書きの一時保存を利用できません。':resumeSaveState.state==='failed'?`画面・下書きを一時保存できませんでした：${resumeSaveState.error?.message||'保存に失敗しました。'} 入力はこの画面に保持しています。`:resumeSaveState.state==='pending'?'画面・下書きを一時保存中…':resumeSaveState.state==='idle'?'画面・下書きの一時保存を準備しています…':`画面・下書きを端末内に一時保存済み${draftCounts()?` ／ 編集中の下書き ${draftCounts()}件（未確定）`:''}`;
+  const text=!storage?'画面と下書きを一時保存できません。':resumeSaveState.state==='failed'?`一時保存に失敗しました：${resumeSaveState.error?.message||'原因不明です。'} 入力内容は画面に残っています。`:resumeSaveState.state==='pending'?'一時保存中…':resumeSaveState.state==='idle'?'一時保存の準備中…':`画面と下書きを一時保存済み${draftCounts()?` ／ 未確定の下書き ${draftCounts()}件`:''}`;
   feedback.setSessionStatus({visible:Boolean(project),state:resumeSaveState.state,text});
 }
 function scheduleSessionSave(){
@@ -140,10 +140,10 @@ function restoreSession(raw){
 }
 
 function requireSavedNames() {
-  if(nameDrafts.size) throw new Error('管理名の編集中の値があります。保存または取消をしてから続けてください。');
+  if(nameDrafts.size) throw new Error('管理名が編集中です。保存か取消をしてください。');
 }
 function requireResolvedPaste(){
-  if(pendingPaste)throw new Error('未確定の貼り付け内容があります。調書で貼り付けを反映するか、下書きを取り消してから続けてください。');
+  if(pendingPaste)throw new Error('未確定の貼り付けがあります。調書で反映するか取り消してください。');
 }
 
 function notify(message, error = false) {
@@ -171,7 +171,7 @@ async function run(task) {
   try { await task(); return true; }
   catch (error) {
     if(error.name!=='AbortError')console.error(error);
-    notify(error.name==='AbortError'?'処理を取り消しました。現在の作業は保持しています。':error.message || '処理に失敗しました。現在の作業は保持されています。', true);
+    notify(error.name==='AbortError'?'処理を取り消しました。作業内容は残っています。':error.message || '処理に失敗しました。作業内容は残っています。', true);
     if ($('editorDialog').open) { $('dialogError').textContent = error.message; $('dialogError').hidden = false; }
     return false;
   } finally {
@@ -195,7 +195,7 @@ function revokeThumbnails() {
 function validateSnapshot(next) {
   validateProject(next);
   const metadataSize = new TextEncoder().encode(JSON.stringify({ ...next, bundleId: '00000000-0000-0000-0000-000000000000', exportedAt: new Date().toISOString() })).length;
-  if (metadataSize > PACKAGE_LIMITS.metadataBytes) throw new Error('工事情報が作業ZIPの上限2MiBを超えます。変更は保存していません。');
+  if (metadataSize > PACKAGE_LIMITS.metadataBytes) throw new Error('工事情報が作業ZIPの上限2MiBを超えるため、保存していません。');
 }
 
 async function persist(next, files, replace = false, nextBundleId = null, sessionOptions = {}) {
@@ -204,7 +204,7 @@ async function persist(next, files, replace = false, nextBundleId = null, sessio
     await cancellable(async signal=>{
       await sessionSaver.pause();
       const session=sessionSnapshot(next,{...sessionOptions,fresh:replace,zipDirty:true});
-      showProgress('この端末へ一時保存しています…');
+      showProgress('端末に一時保存中…');
       if (replace) await storage.replace(next, files, nextBundleId, session,{signal});
       else await storage.save(next, files, session,{signal});
       sessionSaver.reset();
@@ -226,7 +226,7 @@ async function mutate(change, message, sessionOptions={}) {
 
 async function replaceWork(next, files, nextBundleId = null) {
   requireSavedNames();
-  if(pendingPhoto)throw new Error('未保存の写真があります。再試行または写真取込の取消をしてから工事を切り替えてください。');
+  if(pendingPhoto)throw new Error('未保存の写真があります。再試行か取消をしてから切り替えてください。');
   await persist(next, files, true, nextBundleId);
   revokeThumbnails();
   boardDrafts.clear();selectedTargetIds.clear();initialRouteName='';
@@ -270,14 +270,14 @@ function capacityPanel() {
 }
 function nextDatePanel(record) {
   const value=record.workDateDefault;
-  return renderNextDate({recordId:record.id,dateLabel:value?.value?value.value+'（任意指定）':dateToday()+'（自動・任意）'});
+  return renderNextDate({recordId:record.id,dateLabel:value?.value?value.value+'（指定）':dateToday()+'（当日・自動）'});
 }
 
 function photoDateDetails(photo){
   const source=project.baseImports?.find(item=>item.id===photo.sourceImportId);
-  const entries=[['作業日',workDateLabel(photo)],['登録経路',captureSourceLabel(photo)],['取込日時',timestampLabel(photo.importedAt)+(photo.workDateStatus===undefined&&!photo.sourceImportId?'（旧データ値・出所未確認）':'')],['実際の撮影日時',timestampLabel(photo.capturedAt)]];
-  if(hasBoardDate(photo.board))entries.push(['黒板日付',(photo.board.values.date||'空欄')+(photo.workDate!==photo.board.values.date?'（作業日と異なります）':'')]);
-  return renderDateDetails({entries,sourceEntries:source?[['工事',source.sourceJob.name],['路線',source.sourceJob.route||'なし'],['旧写真ID',photo.sourceId],['旧登録日時',timestampLabel(photo.sourceRegisteredAt)+'（撮影日時とは断定しません）']]:null});
+  const entries=[['作業日',workDateLabel(photo)],['登録経路',captureSourceLabel(photo)],['取込日時',timestampLabel(photo.importedAt)+(photo.workDateStatus===undefined&&!photo.sourceImportId?'（旧データ・出所不明）':'')],['実際の撮影日時',timestampLabel(photo.capturedAt)]];
+  if(hasBoardDate(photo.board))entries.push(['黒板日付',(photo.board.values.date||'空欄')+(photo.workDate!==photo.board.values.date?'（作業日と不一致）':'')]);
+  return renderDateDetails({entries,sourceEntries:source?[['工事',source.sourceJob.name],['路線',source.sourceJob.route||'なし'],['旧写真ID',photo.sourceId],['旧登録日時',timestampLabel(photo.sourceRegisteredAt)+'（撮影日時とは限りません）']]:null});
 }
 
 function visiblePhotos() {
@@ -287,10 +287,10 @@ function visiblePhotos() {
 function reviewDatesDialog(ids = null) {
   const photos=ids?project.photos.filter(photo=>ids.includes(photo.id)):visiblePhotos();
   if(!photos.length)throw new Error('この表示範囲に写真がありません。');
-  openDialog(ids?'選択した写真の作業日を確認':'表示範囲の作業日を確認',`<p class="hint">${photos.length}枚。値を変更せず、利用者が業務上の日付として確認します。誤った値・空欄は、写真ごとの訂正から先に直してください。</p><div class="paste-preview"><table><tr><th>写真・所属</th><th>現在の作業日</th></tr>${photos.map(photo=>`<tr><td>${esc(photo.originalName)}<br>${esc(photo.recordId?contextText({...getContext(project,photo.recordId),slot:{name:photo.slot}}):'分類待ち')}</td><td>${esc(workDateLabel(photo))}</td></tr>`).join('')}</table></div>${checkbox('一覧の各日付を業務上の作業日として確認しました',{name:'confirmed',required:true})}`,async()=>{
-    if(photos.some(photo=>!photo.workDate))throw new Error('空欄の作業日があります。写真ごとに入力してから確認してください。');
-    await mutate(next=>photos.forEach(photo=>setPhotoWorkDate(next,photo.id,{value:photo.workDate,confirmed:true})),'表示範囲の作業日を利用者確認済みにしました。必要な調書を再確認してください。');
-  },'一覧の日付を確認済みにする');
+  openDialog(ids?'選択した写真の作業日を確認':'表示範囲の作業日を確認',`<p class="hint">${photos.length}枚の作業日を確認済みにします。値は変わりません。誤りや空欄は先に写真ごとに訂正してください。</p><div class="paste-preview"><table><tr><th>写真・所属</th><th>現在の作業日</th></tr>${photos.map(photo=>`<tr><td>${esc(photo.originalName)}<br>${esc(photo.recordId?contextText({...getContext(project,photo.recordId),slot:{name:photo.slot}}):'分類待ち')}</td><td>${esc(workDateLabel(photo))}</td></tr>`).join('')}</table></div>${checkbox('一覧の作業日を確認しました',{name:'confirmed',required:true})}`,async()=>{
+    if(photos.some(photo=>!photo.workDate))throw new Error('作業日が空欄の写真があります。先に入力してください。');
+    await mutate(next=>photos.forEach(photo=>setPhotoWorkDate(next,photo.id,{value:photo.workDate,confirmed:true})),'作業日を確認済みにしました。調書を再確認してください。');
+  },'確認済みにする');
 }
 
 function field(label,name,value='',{type='text',max=300,required=true,multiline=false,attrs={}}={}){
@@ -315,7 +315,7 @@ function boardFits(board,{skipPoint=false}={}) {
   for (const item of template.fields) if (!item.optional && !(skipPoint&&item.key==='point') && !board.values[item.key].trim()) throw new Error(`黒板の${item.label}を入力してください。`);
   const canvas = document.createElement('canvas'); canvas.width = 600; canvas.height = Math.round(600 / boardAspectRatio(board));
   const result = drawBoard(canvas.getContext('2d'), 0, 0, canvas.width, canvas.height, board);
-  if (result?.overflow) throw new Error(`黒板の文字が収まりません：${result.overflowFields.map(key => template.fields.find(item => item.key === key)?.label || key).join('、')}。短くしてから保存してください。`);
+  if (result?.overflow) throw new Error(`黒板の文字が収まりません：${result.overflowFields.map(key => template.fields.find(item => item.key === key)?.label || key).join('、')}。短くしてください。`);
 }
 
 function boardDescription(board) {
@@ -344,7 +344,7 @@ async function flushBoardDrafts(persistLocally = true) {
   project = next; boardDrafts.clear(); dirty = true; invalidateOutput();
 }
 
-function openDialog(title, body, submit, label = '保存する') {
+function openDialog(title, body, submit, label = '保存') {
   if(!$('editorDialog').open)editorReturnTarget=floating.returnTarget(document.activeElement);
   floating.close();
   if($('workMenu'))$('workMenu').open=false;
@@ -364,14 +364,14 @@ async function startNewProject(name,routeName) {
   if(!String(routeName||'').trim())throw new Error('路線名を入力してください。');
   const next=createProject(name),route=addGroup(next,{kind:'路線',name:routeName});
   await replaceWork(next, new Map());mode='field';activeGroupId=route.id;initialRouteName='';selectedTargetIds.clear();
-  notify('工事と路線を作成しました。記録対象一覧の「追加」から登録してください。');
+  notify('工事と路線を作成しました。「追加」から記録対象を登録してください。');
 }
 function newProjectDialog() {
   if(!project){
     floating.close();if($('workMenu'))$('workMenu').open=false;
     $('initialProjectName')?.focus();return;
   }
-  openDialog('新しい工事を始める', `<div class="dialog-fields">${renderProjectSetupFields()}</div><p class="dialog-note">開いている工事から切り替えます。必要な作業は先にZIPへ保存してください。</p>`, data => startNewProject(data.get('name'),data.get('routeName')), 'この工事を始める');
+  openDialog('新しい工事を始める', `<div class="dialog-fields">${renderProjectSetupFields()}</div><p class="dialog-note">今の工事から切り替えます。先に作業ZIPを保存してください。</p>`, data => startNewProject(data.get('name'),data.get('routeName')), '工事を始める');
 }
 
 function newGroupDialog() {
@@ -382,18 +382,18 @@ function newGroupDialog() {
 }
 
 function renameProjectDialog() {
-  openDialog('工事名を訂正',`<div class="dialog-fields">${field('工事名','name',project.name,{max:100})}</div><p class="hint">工事ID・原本・所属は保持します。採用写真と次回用の黒板の工事名も更新します。元写真は保持し、黒板の訂正履歴を残します。調書は要再確認になります。</p>`,data=>mutate(next=>renameProject(next,data.get('name')),'工事名と採用写真・次回用黒板を更新しました。'));
+  openDialog('工事名を訂正',`<div class="dialog-fields">${field('工事名','name',project.name,{max:100})}</div><p class="hint">採用写真と次回用黒板の工事名も更新します。原本と黒板の訂正履歴は残ります。調書は要再確認になります。</p>`,data=>mutate(next=>renameProject(next,data.get('name')),'工事名を訂正しました。'));
 }
 
 function renameGroupDialog(id) {
   const group=project.groups.find(g=>g.id===id);
-  openDialog('路線名を訂正',`<p class="hint">${esc(group.kind)}</p><div class="dialog-fields">${field('路線名','name',group.name)}</div><p class="hint">所属ID・原本は保持し、採用写真と次回用の黒板の路線名も更新します。</p>`,data=>mutate(next=>renameGroup(next,id,data.get('name')),'路線名を訂正しました。'));
+  openDialog('路線名を訂正',`<p class="hint">${esc(group.kind)}</p><div class="dialog-fields">${field('路線名','name',group.name)}</div><p class="hint">採用写真と次回用黒板の路線名も更新します。原本は変わりません。</p>`,data=>mutate(next=>renameGroup(next,id,data.get('name')),'路線名を訂正しました。'));
 }
 
 function editTargetDialog(id) {
   const target=project.targets.find(t=>t.id===id),def=USE_CASES[target.useCase];
-  openDialog('管理名・所属を訂正',`<p class="hint">用途：${esc(target.useCase)}（用途はこの操作で変更しません）</p><div class="dialog-fields">${field(def.nameLabel,'name',target.name)}${selectField('路線名',groupOptions(target.groupId||''),{name:'groupId',attrs:{required:true}})}</div><p class="dialog-note">記録・写真・原本のIDを保持し、調書の所属と採用写真・次回用黒板の路線名・点名を更新します。</p>`,async data=>{
-    await mutate(next=>updateTarget(next,id,{name:data.get('name'),groupId:data.get('groupId')||null}),'管理名・所属を調書と採用写真・次回用黒板へ反映しました。');
+  openDialog('管理名・所属を訂正',`<p class="hint">用途：${esc(target.useCase)}（変更できません）</p><div class="dialog-fields">${field(def.nameLabel,'name',target.name)}${selectField('路線名',groupOptions(target.groupId||''),{name:'groupId',attrs:{required:true}})}</div><p class="dialog-note">調書・採用写真・次回用黒板の路線名と点名も更新します。</p>`,async data=>{
+    await mutate(next=>updateTarget(next,id,{name:data.get('name'),groupId:data.get('groupId')||null}),'管理名・所属を訂正しました。');
     activeGroupId='__all__';activeTargetId=id;
   });
 }
@@ -403,30 +403,30 @@ function photoMoveDialog(photoId) {
   const photo=project.photos.find(p=>p.id===photoId),initial=project.targets.find(t=>t.id===photo.targetId)||project.targets[0];
   if(!initial)throw new Error('移動先の記録対象を先に登録してください。');
   const destinationFields=(target,category=(target.id===photo.targetId?target.records.find(r=>r.id===photo.recordId)?.category:null)||target.records[0].category)=>selectField(USE_CASES[target.useCase].categoryLabel,options(USE_CASES[target.useCase].categories,category),{name:'category'})+selectField('写真の種類',options(USE_CASES[target.useCase].slots,USE_CASES[target.useCase].slots.includes(photo.slot)?photo.slot:USE_CASES[target.useCase].slots[0]),{name:'slot'});
-  openDialog('写真の所属・分類を訂正',`<p class="hint">${esc(photo.originalName)}。原本と写真IDは変更しません。</p><div class="dialog-fields">${selectField('移動先の記録対象',optionItems(project.targets.map(target=>[target.id,`${target.name} ／ ${target.useCase} ／ ${locationLabel(project.groups.find(g=>g.id===target.groupId))}`]),initial.id),{name:'targetId'})}<div id="moveDestination" class="dialog-fields">${destinationFields(initial)}</div></div><p class="hint">選んだ区分の記録がなければ、確定時に空の記録を追加します。次の画面で移動の影響を確認します。</p>`,data=>{
+  openDialog('写真の所属・分類を訂正',`<p class="hint">${esc(photo.originalName)}。原本は変わりません。</p><div class="dialog-fields">${selectField('移動先の記録対象',optionItems(project.targets.map(target=>[target.id,`${target.name} ／ ${target.useCase} ／ ${locationLabel(project.groups.find(g=>g.id===target.groupId))}`]),initial.id),{name:'targetId'})}<div id="moveDestination" class="dialog-fields">${destinationFields(initial)}</div></div><p class="hint">選んだ区分の記録がなければ新しく追加します。次の画面で影響を確認します。</p>`,data=>{
     const candidate=clone(project),target=candidate.targets.find(t=>t.id===data.get('targetId'));
     const record=target.records.find(r=>r.category===data.get('category'))||addRecord(candidate,target.id,data.get('category'));
     const destination={recordId:record.id,slot:data.get('slot')};
     const effect=describePhotoMove(candidate,photoId,destination);
     if(!effect.canMove)throw new Error(effect.reason);
     const conflict=Boolean(effect.conflictPhoto||effect.to.slot.status==='unnecessary'||effect.to.slot.status==='retake');
-    openDialog('移動の影響を確認',`<div class="dialog-fields"><p><strong>移動元</strong><br>${esc(contextText(effect.from))}</p><p><strong>移動先</strong><br>${esc(contextText(effect.to))}</p><div class="dialog-note">${effect.messages.map(m=>`<p>${esc(m)}</p>`).join('')}<p>移動先の現在の状態：${statuses[effect.to.slot.status]}${effect.to.slot.reason?` ／ ${esc(effect.to.slot.reason)}`:''}</p></div>${selectField('移動先での扱い',`${conflict?'<option value="">扱いを選んでください</option>':''}<option value="adopt">この写真を採用する（現在の採用・不要指定を置き換え）</option><option value="history">履歴として追加する（現在の状態を保持）</option>`,{name:'resolution',attrs:{required:true}})}${effect.requiresMmsConfirmation?checkbox('MMSでは合成を解除し、元の黒板データは保持することを確認しました',{name:'mmsConfirmed',required:true}):''}</div>`,async decision=>{
+    openDialog('移動の影響を確認',`<div class="dialog-fields"><p><strong>移動元</strong><br>${esc(contextText(effect.from))}</p><p><strong>移動先</strong><br>${esc(contextText(effect.to))}</p><div class="dialog-note">${effect.messages.map(m=>`<p>${esc(m)}</p>`).join('')}<p>移動先の状態：${statuses[effect.to.slot.status]}${effect.to.slot.reason?` ／ ${esc(effect.to.slot.reason)}`:''}</p></div>${selectField('移動先での扱い',`${conflict?'<option value="">選択してください</option>':''}<option value="adopt">この写真を採用（今の採用・撮影不要を置き換え）</option><option value="history">履歴に追加（今の状態を維持）</option>`,{name:'resolution',attrs:{required:true}})}${effect.requiresMmsConfirmation?checkbox('MMSでは黒板の合成を外すことを確認しました（黒板データは残ります）',{name:'mmsConfirmed',required:true}):''}</div>`,async decision=>{
       const next=clone(candidate);
       movePhoto(next,photoId,{...destination,resolution:decision.get('resolution'),disableBoardForMms:decision.get('mmsConfirmed')==='on'});
       await persist(next,originals);project=next;dirty=true;invalidateOutput();
-      notify('写真の所属・分類を訂正しました。移動元と移動先の不足を再判定しました。');
-    },'この内容で移動');
-  },'移動の影響を確認');
+      notify('写真の所属・分類を訂正しました。');
+    },'移動する');
+  },'影響を確認');
   $('editorForm').onchange=event=>{if(event.target.name==='targetId')$('moveDestination').innerHTML=destinationFields(project.targets.find(t=>t.id===event.target.value));};
 }
 
 function photoDeleteDialog(id) {
   const effect=describePhotoDelete(project,id);
-  openDialog('写真を1枚削除',`<div class="dialog-fields"><p>${esc(contextText(effect.from))}<br>原本：${esc(effect.photo.originalName)}</p><div class="dialog-note">${effect.messages.map(m=>`<p>${esc(m)}</p>`).join('')}<p>同じ枠に残る履歴：${effect.remainingHistory}枚</p></div>${checkbox('この写真の原本と履歴を削除することを確認しました',{name:'confirmed',required:true})}</div>`,async()=>{
+  openDialog('写真を削除',`<div class="dialog-fields"><p>${esc(contextText(effect.from))}<br>原本：${esc(effect.photo.originalName)}</p><div class="dialog-note">${effect.messages.map(m=>`<p>${esc(m)}</p>`).join('')}<p>同じ枠に残る履歴：${effect.remainingHistory}枚</p></div>${checkbox('この写真の原本と履歴の削除を確認しました',{name:'confirmed',required:true})}</div>`,async()=>{
     const next=clone(project);deletePhoto(next,id);const files=new Map(originals);files.delete(id);
     await persist(next,files);project=next;originals=files;dirty=true;invalidateOutput();revokeThumbnails();
-    notify('指定した写真を削除しました。過去の写真は自動採用していません。');
-  },'この写真を削除');
+    notify('写真を削除しました。過去の写真は自動で採用されません。');
+  },'写真を削除');
 }
 
 async function flushReportDrafts(persistLocally=true) {
@@ -439,31 +439,31 @@ async function flushReportDrafts(persistLocally=true) {
 
 function pasteTextDialog(settings,text,error=''){
   pendingPaste={projectId:project.id,settings,text};dirty=true;
-  openDialog('貼り付け内容を確認・修正',`${error?notice(error,{tone:'error',role:'alert'}):''}<p class="hint">元の表は変更していません。タブ区切りの内容を修正して再検証できます。</p><div class="dialog-fields">${textareaField('貼り付けるテキスト',{name:'pasteText',value:text,max:null,rows:10,required:true})}</div>`,data=>{
+  openDialog('貼り付け内容を確認・修正',`${error?notice(error,{tone:'error',role:'alert'}):''}<p class="hint">表はまだ変わっていません。タブ区切りの内容を直して再検証できます。</p><div class="dialog-fields">${textareaField('貼り付けるテキスト',{name:'pasteText',value:text,max:null,rows:10,required:true})}</div>`,data=>{
     const corrected=data.get('pasteText');pendingPaste.text=corrected;
     showPastePreview({...settings,text:corrected});
-  },'検証して範囲を確認');
+  },'検証する');
   $('editorForm').oninput=event=>{if(event.target.name==='pasteText')pendingPaste.text=event.target.value;};
 }
 
 function showPastePreview(settings){
   const effect=describeReportPaste(project,settings);
   pendingPaste={projectId:project.id,settings,text:settings.text};dirty=true;
-  openDialog('調書の貼り付け範囲を確認',`<p>${effect.rows}行 × ${effect.columns}列、${effect.cells}セルを更新します。</p><div class="paste-preview"><table><thead><tr><th>対象・項目</th><th>新しい値</th></tr></thead><tbody>${effect.updates.map(update=>{const {target,record}=getContext(project,update.recordId);const column=USE_CASES[target.useCase].reportColumns.find(c=>c.key===update.key);return `<tr><td>${esc(target.name)} ／ ${esc(record.category)}<br>${esc(column.label)}</td><td>${esc(update.value)}</td></tr>`;}).join('')}</tbody></table></div><p class="hint">範囲・300文字上限を検証済みです。確定するまで表は変更しません。</p>${actions(button('貼付けテキストを修正',{id:'editPasteText'}))}`,async()=>{
+  openDialog('貼り付け範囲の確認',`<p>${effect.rows}行 × ${effect.columns}列、${effect.cells}セルを更新します。</p><div class="paste-preview"><table><thead><tr><th>対象・項目</th><th>新しい値</th></tr></thead><tbody>${effect.updates.map(update=>{const {target,record}=getContext(project,update.recordId);const column=USE_CASES[target.useCase].reportColumns.find(c=>c.key===update.key);return `<tr><td>${esc(target.name)} ／ ${esc(record.category)}<br>${esc(column.label)}</td><td>${esc(update.value)}</td></tr>`;}).join('')}</tbody></table></div><p class="hint">範囲と300文字の上限は確認済みです。確定するまで表は変わりません。</p>${actions(button('テキストを修正',{id:'editPasteText'}))}`,async()=>{
     const next=clone(project),replaced=new Set(effect.updates.map(u=>`${u.recordId}:${u.key}`));
     for(const [idKey,value] of reportDrafts){if(replaced.has(idKey))continue;const at=idKey.indexOf(':');setReportField(next,idKey.slice(0,at),idKey.slice(at+1),value);}
-    applyReportPaste(next,settings);await persist(next,originals,false,null,{clearReports:true,clearPaste:true});project=next;reportDrafts.clear();pendingPaste=null;dirty=true;invalidateOutput();notify(`${effect.cells}セルの貼り付けを保存しました。`);
-  },'この範囲へ貼り付け');
+    applyReportPaste(next,settings);await persist(next,originals,false,null,{clearReports:true,clearPaste:true});project=next;reportDrafts.clear();pendingPaste=null;dirty=true;invalidateOutput();notify(`${effect.cells}セルに貼り付けました。`);
+  },'貼り付ける');
   $('editPasteText').onclick=()=>pasteTextDialog(settings,settings.text);
 }
 
 function reportSectionDialog(recordId) {
   const {target,record}=getContext(project,recordId),section=record.reportSection||{};
-  openDialog('施工区間（この記録の任意設定）',`<p class="hint">${esc(target.name)} ／ ${esc(record.category)}。未設定でも写真・調書・ZIPを使用できます。</p><div class="dialog-fields">${checkbox('この調書に施工区間を記載する',{name:'enabled',checked:record.reportSection!==null})}<div class="two-fields">${field('起点 m','start',section.start||'',{required:false})}${field('終点 m','end',section.end||'',{required:false})}</div>${field('不施工区間長 m（空欄は0）','excluded',section.excluded||'',{required:false})}${selectField('測点の表示',options(STATION_NOTATIONS,section.notation||'SP'),{name:'notation'})}${field('自由入力の測点名','custom',section.custom||'',{required:false,max:30})}<p id="sectionCalculation" class="hint"></p></div><p class="hint">数値はm、小数第3位まで。No.は100m区切り。KP=もmの数値へ接頭辞を付ける既存表記です。試験の計算・判定は行いません。</p>`,async data=>{
+  openDialog('施工区間（この記録・任意）',`<p class="hint">${esc(target.name)} ／ ${esc(record.category)}。未設定でも写真・調書・ZIPは使えます。</p><div class="dialog-fields">${checkbox('この調書に施工区間を記載する',{name:'enabled',checked:record.reportSection!==null})}<div class="two-fields">${field('起点 m','start',section.start||'',{required:false})}${field('終点 m','end',section.end||'',{required:false})}</div>${field('不施工区間長 m（空欄は0）','excluded',section.excluded||'',{required:false})}${selectField('測点の表示',options(STATION_NOTATIONS,section.notation||'SP'),{name:'notation'})}${field('自由入力の測点名','custom',section.custom||'',{required:false,max:30})}<p id="sectionCalculation" class="hint"></p></div><p class="hint">数値はm単位、小数第3位まで。No.は100m区切り、KP=はmの数値の前に付けます。試験の計算・判定はしません。</p>`,async data=>{
     const value=data.get('enabled')==='on'?{start:data.get('start').trim(),end:data.get('end').trim(),excluded:data.get('excluded').trim(),notation:data.get('notation'),custom:data.get('custom').trim()}:null;
-    await mutate(next=>setReportSection(next,recordId,value),'任意の施工区間を保存しました。');
+    await mutate(next=>setReportSection(next,recordId,value),'施工区間を保存しました。');
   });
-  $('editorForm').oninput=()=>{const f=$('editorForm'),r=constructionSection(f.elements.start.value,f.elements.end.value,f.elements.excluded.value);$('sectionCalculation').textContent=r.error||(r.complete?`工事延長 L = ${r.length} m`:'設定する場合は起点と終点を入力してください。');};
+  $('editorForm').oninput=()=>{const f=$('editorForm'),r=constructionSection(f.elements.start.value,f.elements.end.value,f.elements.excluded.value);$('sectionCalculation').textContent=r.error||(r.complete?`工事延長 L = ${r.length} m`:'起点と終点を入力してください。');};
 }
 
 function routeSectionDialog(groupId){
@@ -480,25 +480,37 @@ function tsCommonDialog(groupId){
   const records=project.targets.filter(t=>t.groupId===groupId&&t.useCase==='TS出来形(バリアフリー)').flatMap(t=>t.records);
   // 既に入力済みの値があれば初期値に使う（記録ごとに違う場合は最初に見つかった値）。
   const initial=key=>records.map(r=>String(r.reportFields?.[key]||'').trim()).find(Boolean)||'';
-  openDialog('測定者・規格値・社内規格値を一括入力',`<p>${esc(group.name)}のTS出来形 ${records.length}記録すべてに同じ値を入れます。各記録に入力済みの値は上書きします。</p><div class="dialog-fields">${field('測定者','surveyor',initial('surveyor'),{required:false})}${field('規格値 mm','standard',initial('standard'),{required:false})}${field('社内規格値 mm','internalStandard',initial('internalStandard'),{required:false})}</div><p class="hint">調書の表で記録ごとに変更することもできます。</p>`,async data=>{
+  openDialog('測定者・規格値・社内規格値を一括入力',`<p>${esc(group.name)}のTS出来形 ${records.length}記録に同じ値を入れます。入力済みの値は上書きされます。</p><div class="dialog-fields">${field('測定者','surveyor',initial('surveyor'),{required:false})}${field('規格値 mm','standard',initial('standard'),{required:false})}${field('社内規格値 mm','internalStandard',initial('internalStandard'),{required:false})}</div><p class="hint">記録ごとの変更は調書の表でできます。</p>`,async data=>{
     const values=Object.fromEntries(TS_COMMON_KEYS.map(key=>[key,String(data.get(key)||'').trim()]));
     const clearReportKeys=records.flatMap(r=>TS_COMMON_KEYS.map(key=>`${r.id}:${key}`));
-    await mutate(next=>setTSCommonFields(next,groupId,values),`${group.name}のTS出来形 ${records.length}記録へ測定者・規格値・社内規格値を反映しました。`,{clearReportKeys});
+    await mutate(next=>setTSCommonFields(next,groupId,values),`${group.name}のTS出来形 ${records.length}記録に反映しました。`,{clearReportKeys});
     clearReportKeys.forEach(key=>reportDrafts.delete(key));
   });
 }
 
+function tsStationDialog(groupId){
+  const group=project.groups.find(g=>g.id===groupId);
+  if(!group)throw new Error('測点の頭を設定する路線を選んでください。');
+  const records=project.targets.filter(t=>t.groupId===groupId&&t.useCase==='TS出来形(バリアフリー)').flatMap(t=>t.records);
+  const current=records.map(r=>r.reportFields||{}).find(f=>f.stationNotation)||{};
+  openDialog('TS調書の測点の頭を選択',`<p>${esc(group.name)}のTS出来形 ${records.length}記録で、調書の「測点又は区別」の前に付ける文字を選びます。</p><div class="dialog-fields">${selectField('測点の表記',options(TS_STATION_NOTATIONS,current.stationNotation||'SP'),{name:'notation'})}${field('自由入力の文字','custom',current.stationCustom||'',{required:false,max:30})}<p id="tsStationExample" class="hint"></p></div><p class="hint">入力値は変えず、調書の出力時だけ付けます。同じ文字で始まる測点には重ねて付けません。</p>`,async data=>{
+    await mutate(next=>setTSStationNotation(next,groupId,{notation:data.get('notation'),custom:String(data.get('custom')||'')}),`${group.name}のTS出来形 ${records.length}記録の測点の頭を設定しました。`);
+  });
+  const example=()=>{const f=$('editorForm'),notation=f.elements.notation.value,head=notation==='自由入力'?f.elements.custom.value.trim():notation==='なし'?'':notation;$('tsStationExample').textContent=`例：68.29R → ${head}68.29R`;};
+  $('editorForm').oninput=example;$('editorForm').onchange=example;example();
+}
+
 function targetDeleteDialog(ids){
-  if(pendingPhoto)throw new Error('未保存の写真取込を解決してから削除してください。');
+  if(pendingPhoto)throw new Error('未保存の写真があります。再試行か取消をしてから削除してください。');
   const plan=describeTargetDeletion(project,ids);
-  openDialog('記録対象の削除を確認',`<ul>${plan.names.map(name=>`<li>${esc(name)}</li>`).join('')}</ul><p>${plan.targetIds.length}対象・${plan.recordIds.length}記録・原本${plan.photoIds.length}枚（${bytesLabel(plan.bytes)}）。採用写真・全履歴・調書も削除します。</p><p class="hint">必要な作業ZIPを先に保存してください。取り消すと変更しません。</p>${checkbox('対象と原本を確認しました',{name:'confirmed',required:true})}`,async()=>{
+  openDialog('記録対象の削除を確認',`<ul>${plan.names.map(name=>`<li>${esc(name)}</li>`).join('')}</ul><p>${plan.targetIds.length}対象・${plan.recordIds.length}記録・原本${plan.photoIds.length}枚（${bytesLabel(plan.bytes)}）を削除します。採用写真・履歴・調書も消えます。</p><p class="hint">先に作業ZIPを保存してください。取消なら何も変わりません。</p>${checkbox('削除する対象と原本を確認しました',{name:'confirmed',required:true})}`,async()=>{
     const next=clone(project),current=deleteTargets(next,plan.targetIds),files=new Map(originals);
     current.photoIds.forEach(id=>files.delete(id));
     const clearNames=current.targetIds,clearBoardIds=current.recordIds,clearReportKeys=[...reportDrafts.keys()].filter(key=>current.recordIds.some(id=>key.startsWith(id+':')));
     await persist(next,files,false,null,{clearNames,clearBoardIds,clearPaste:Boolean(pendingPaste?.settings?.recordIds?.some(id=>current.recordIds.includes(id)))});
     project=next;originals=files;clearNames.forEach(id=>{nameDrafts.delete(id);selectedTargetIds.delete(id);});clearBoardIds.forEach(id=>boardDrafts.delete(id));clearReportKeys.forEach(key=>reportDrafts.delete(key));if(pendingPaste?.settings?.recordIds?.some(id=>current.recordIds.includes(id)))pendingPaste=null;
     if(current.targetIds.includes(activeTargetId)){activeTargetId='';activeRecordId='';}closePhotoDrawer();current.recordIds.forEach(id=>outputState.selectedIds.delete(id));
-    revokeThumbnails();dirty=true;invalidateOutput();notify('確認した記録対象を削除しました。');
+    revokeThumbnails();dirty=true;invalidateOutput();notify('記録対象を削除しました。');
   },'対象と原本を削除');
 }
 
@@ -515,12 +527,12 @@ async function prepareOutput(){
   requireSavedNames();
   requireResolvedPaste();
   await flushBoardDrafts(true);await flushReportDrafts(true);
-  if(outputState.edition==='final'&&buildOutputModel(project,{recordIds:selectedOutputIds(),edition:'draft'}).issues.length){outputState.edition='draft';notify('不足・未確認があるため、途中版のプレビューへ切り替えました。');}
-  showProgress('調書・採用写真の参照と原本を確認しています…');
+  if(outputState.edition==='final'&&buildOutputModel(project,{recordIds:selectedOutputIds(),edition:'draft'}).issues.length){outputState.edition='draft';notify('不足・未確認があるため、途中版に切り替えました。');}
+  showProgress('調書と写真を確認中…');
   invalidateOutput();
   const result=await cancellable(signal=>buildOutputHTML(project,originals,{recordIds:selectedOutputIds(),edition:outputState.edition,onProgress:showProgress,signal,format:'blob'}));
   outputState.prepared={...result,fingerprint:JSON.stringify(project)};outputState.ready=false;outputState.approved=false;
-  notify(`${result.model.edition==='draft'?'途中版':'完成版'}のプレビューを作成しました。${result.model.pageCount}ページです。`);
+  notify(`${result.model.edition==='draft'?'途中版':'完成版'}のプレビューを作成しました（${result.model.pageCount}ページ）。`);
 }
 
 function observeOutputFrame(frame,prepared) {
@@ -556,10 +568,10 @@ async function attachOutputPreview(){
   }catch(error){if(frame.isConnected&&outputState.prepared===prepared)notify(`出力を表示できません：${error.message}`,true);}
 }
 function openDocumentPreview(frame=$('outputPreview'),trigger=document.activeElement){
-  if(!frame||!outputState.prepared||!outputState.ready)throw new Error('出力プレビューの準備が完了してから開いてください。');
+  if(!frame||!outputState.prepared||!outputState.ready)throw new Error('プレビューの準備中です。完了後に開いてください。');
   const prepared=outputState.prepared;
   trigger=floating.returnTarget(trigger);floating.close();
-  previewViewer.showDocument({frame,title:`${prepared.model.edition==='draft'?'途中版':'完成版'} 調書・写真帳（${prepared.model.pageCount}ページ）`,caption:'PDF保存に使う同じ簡易帳票です。拡大率は印刷・保存内容へ反映しません。',trigger});
+  previewViewer.showDocument({frame,title:`${prepared.model.edition==='draft'?'途中版':'完成版'} 調書・写真帳（${prepared.model.pageCount}ページ）`,caption:'PDF保存と同じ内容です。拡大率は印刷に影響しません。',trigger});
 }
 function openImagePreview(photoId,composed=false,trigger=document.activeElement){
   const photo=project.photos.find(p=>p.id===photoId);if(!photo)throw new Error('写真が見つかりません。');
@@ -567,12 +579,12 @@ function openImagePreview(photoId,composed=false,trigger=document.activeElement)
   const context=photo.recordId?getContext(project,photo.recordId):null;
   const label=context?`${context.target.name} ／ ${context.record.category} ／ ${photo.slot}`:photo.originalName;
   trigger=floating.returnTarget(trigger);floating.close();
-  void previewViewer.showImage({title:label,caption:composed&&photo.applyBoard?'電子黒板を合成した確認用画像です。原本は変更しません。':'原本の拡大表示です。電子黒板の合成は含みません。',blob,loadBlob:composed?()=>composePhoto(blob,photo):undefined,trigger});
+  void previewViewer.showImage({title:label,caption:composed&&photo.applyBoard?'黒板を合成した確認用画像です。原本は変わりません。':'原本の拡大表示です（黒板の合成なし）。',blob,loadBlob:composed?()=>composePhoto(blob,photo):undefined,trigger});
 }
 function openCanvasPreview(id,trigger=document.activeElement){
   const canvas=$(id);if(!canvas)throw new Error('黒板プレビューがありません。');
   trigger=floating.returnTarget(trigger);floating.close();
-  void previewViewer.showImage({title:'黒板の拡大プレビュー',caption:'画面に表示中の黒板です。作業データや原本は変更しません。',loadBlob:()=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('黒板を表示できません。')),'image/png')),trigger});
+  void previewViewer.showImage({title:'黒板の拡大',caption:'表示中の黒板です。データは変わりません。',loadBlob:()=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('黒板を表示できません。')),'image/png')),trigger});
 }
 
 async function openPrintOutput(){
@@ -582,19 +594,19 @@ async function openPrintOutput(){
   const win=window.open('','_blank');if(!win)throw new Error('印刷画面を開けません。ポップアップの許可を確認してください。');
   try{
     const html=await prepared.blob.text();
-    if(outputState.prepared!==prepared){win.close();throw new Error('出力内容が変更されました。最新のプレビューを確認してください。');}
+    if(outputState.prepared!==prepared){win.close();throw new Error('内容が変わりました。プレビューを作り直してください。');}
     win.document.open();win.document.write(html);win.document.close();
   }catch(error){win.close();throw error;}
-  notify('確認した内容の印刷画面を開きました。画像の準備後、画面内の印刷ボタンからPDF保存できます。');
+  notify('印刷画面を開きました。画像の表示後、印刷ボタンからPDF保存できます。');
 }
 
 function finishWorkDialog(){
-  if(pendingPhoto)throw new Error('未保存の写真があります。再試行または写真取込の取消をしてから作業を終了してください。');
+  if(pendingPhoto)throw new Error('未保存の写真があります。再試行か取消をしてから終了してください。');
   let requested=false;
-  openDialog('このブラウザーの作業を終了',`<p class="dialog-note">${esc(project.name)}の対象${project.targets.length}件・原本${project.photos.length}枚を一時保存から消去します。作業ZIPを保存し、保存先を確認してください。</p><div class="dialog-fields">${actions(button('現在の作業ZIPを保存',{id:'finishBackup'}))}${checkbox('必要な作業ZIPが保存されていることを確認しました',{name:'confirmed',required:true})}</div>`,async()=>{
-    if(!requested)throw new Error('先にこの画面の作業ZIP保存を実行してください。');
-    await sessionSaver.pause();if(storage)await storage.clear();project=null;sessionSaver.reset();originals=new Map();boardDrafts.clear();reportDrafts.clear();nameDrafts.clear();pendingPaste=null;disclosureState.clear();closePhotoDrawer();revokeThumbnails();dirty=false;outputState.initialized=false;invalidateOutput();notify('このブラウザーの一時作業を終了しました。保存したZIPから再開できます。');
-  },'一時作業を消去して終了');
+  openDialog('作業を終了',`<p class="dialog-note">${esc(project.name)}（対象${project.targets.length}件・原本${project.photos.length}枚）をこの端末から消去します。先に作業ZIPを保存し、保存先を確認してください。</p><div class="dialog-fields">${actions(button('作業ZIPを保存',{id:'finishBackup'}))}${checkbox('作業ZIPを保存したことを確認しました',{name:'confirmed',required:true})}</div>`,async()=>{
+    if(!requested)throw new Error('先に「作業ZIPを保存」を押してください。');
+    await sessionSaver.pause();if(storage)await storage.clear();project=null;sessionSaver.reset();originals=new Map();boardDrafts.clear();reportDrafts.clear();nameDrafts.clear();pendingPaste=null;disclosureState.clear();closePhotoDrawer();revokeThumbnails();dirty=false;outputState.initialized=false;invalidateOutput();notify('作業を終了しました。保存したZIPから再開できます。');
+  },'消去して終了');
   $('finishBackup').onclick=()=>run(async()=>{await savePackage();requested=true;});
 }
 
@@ -613,7 +625,7 @@ function targetRegistrationFields(useCase,groupId='',count=1,name='',category=''
   if(trial){let index=2;const names=new Set(project.targets.filter(t=>t.groupId===(groupId||null)).map(t=>t.name));while(names.has(suggested))suggested=`${current}${index++}`;}
   const names=count===1?(trial?textField(definition.nameLabel,{name:'name',value:suggested,attrs:{readonly:true}}):field(definition.nameLabel,'name',name||suggested)):field('管理名の先頭部分','prefix',trial?current:(prefix??definition.prefix),{max:30,required:false});
   const materials=trial?selectField('材料',optionItems([['','材料を選択してください'],...materialChoices(useCase,current)],material),{name:'material',attrs:{required:true}}):'';
-  return `${selectField('路線名',groupOptions(groupId),{name:'groupId',attrs:{required:true}})}${selectField(definition.categoryLabel,options(definition.categories,current),{name:'category'})}${textField('追加する数',{name:'count',type:'number',value:count,max:null,attrs:{min:1,max:2000,step:1}})}${names}${materials}${useCase==='MMS'?'<input type="hidden" name="initialTemplate" value=""><p class="hint">MMSは黒板なしです。</p>':selectField('今回登録する対象の黒板初期値',optionItems(Object.values(BOARD_TEMPLATES).filter(t=>t.id!=='legacy-simple').map(t=>[t.id,t.name]),initialTemplate||definition.defaultBoardTemplate),{name:'initialTemplate'})}${useCase!=='MMS'?'<section class="registration-board-preview"><strong>登録する黒板のプレビュー</strong><canvas id="registrationBoardPreview" width="600" height="450" class="board-canvas" aria-label="登録する黒板のプレビュー"></canvas><p id="registrationBoardStatus" class="hint"></p></section>':''}<p class="hint">入力した路線に対象を追加します。TSの右側画像はPCから指定します。</p>`;
+  return `${selectField('路線名',groupOptions(groupId),{name:'groupId',attrs:{required:true}})}${selectField(definition.categoryLabel,options(definition.categories,current),{name:'category'})}${textField('追加する数',{name:'count',type:'number',value:count,max:null,attrs:{min:1,max:2000,step:1}})}${names}${materials}${useCase==='MMS'?'<input type="hidden" name="initialTemplate" value=""><p class="hint">MMSは黒板なしです。</p>':selectField('黒板の初期形式',optionItems(Object.values(BOARD_TEMPLATES).filter(t=>t.id!=='legacy-simple').map(t=>[t.id,t.name]),initialTemplate||definition.defaultBoardTemplate),{name:'initialTemplate'})}${useCase!=='MMS'?'<section class="registration-board-preview"><strong>黒板のプレビュー</strong><canvas id="registrationBoardPreview" width="600" height="450" class="board-canvas" aria-label="黒板のプレビュー"></canvas><p id="registrationBoardStatus" class="hint"></p></section>':''}<p class="hint">選んだ路線に追加します。TSの右側画像はPCで指定します。</p>`;
 }
 
 function drawRegistrationPreview(){
@@ -625,7 +637,7 @@ function drawRegistrationPreview(){
     const [target]=addTargets(candidate,{useCase,groupId:group.id,count,name:form.elements.namedItem('name')?.value||'',prefix:form.elements.namedItem('prefix')?.value||'',category:form.elements.category.value,templateId:form.elements.initialTemplate.value});
     const board=resolveCaptureBoard(candidate,target.records[0].id,target.records[0].slots[0].name).board;
     const result=drawBoard(canvas.getContext('2d'),0,0,canvas.width,canvas.height,board);
-    $('registrationBoardStatus').textContent=result.overflow?'文字が枠に収まりません。登録前に入力を確認してください。':`${BOARD_TEMPLATES[board.templateId].name} ／ 項目名：${getReportItemName(candidate,target.records[0].id)}`;
+    $('registrationBoardStatus').textContent=result.overflow?'文字が枠に収まりません。入力を確認してください。':`${BOARD_TEMPLATES[board.templateId].name} ／ 項目名：${getReportItemName(candidate,target.records[0].id)}`;
   }catch(error){$('registrationBoardStatus').textContent=error.message;}
 }
 
@@ -633,17 +645,17 @@ function addTargetsDialog() {
   if(!project.groups.length){newGroupDialog();return;}
   const initial = useCaseFilter || '基準点';
   const groupId = project.groups.some(g=>g.id===activeGroupId)?activeGroupId:project.groups[0].id;
-  openDialog('記録対象を追加', `<div class="dialog-fields">${selectField('用途',options(Object.keys(USE_CASES),initial),{name:'useCase'})}<div id="targetRegistration" class="dialog-fields">${targetRegistrationFields(initial,groupId)}</div></div><p class="hint">「現場写真」は、baseでも用途名のみが用意された設定待ちの項目です。現行版では、専用の登録・撮影・写真帳作成フローをまだ追加していません。</p>`, async data => {
+  openDialog('記録対象を追加', `<div class="dialog-fields">${selectField('用途',options(Object.keys(USE_CASES),initial),{name:'useCase'})}<div id="targetRegistration" class="dialog-fields">${targetRegistrationFields(initial,groupId)}</div></div><p class="hint">「現場写真」は準備中です。専用の登録・撮影・写真帳作成にはまだ対応していません。</p>`, async data => {
     if(!data.get('groupId'))throw new Error('路線を選択してください。');
     const next=clone(project),targets=addTargets(next,{useCase:data.get('useCase'),groupId:data.get('groupId') || null,category:data.get('category'),name:data.get('name') || '',prefix:data.get('prefix') || '',count:Number(data.get('count')),templateId:data.get('initialTemplate')||undefined});
     if(isTrial(data.get('useCase')))for(const target of targets)target.records[0].reportFields.material=String(data.get('material')||'');
     validateSnapshot(next);
-    openDialog('登録する対象を確認',`<p class="step-hint">1 用途・管理名を指定 → <strong>2 内容を確認</strong></p><p>${esc(data.get('useCase'))} ／ ${esc(data.get('category'))} ／ ${esc(locationLabel(project.groups.find(g=>g.id===data.get('groupId'))))}</p><div class="registration-preview"><ul>${targets.map(target=>`<li>${esc(target.name)}</li>`).join('')}</ul></div><p class="hint">${targets.length}件を追加します。確定前の取消では工事を変更しません。</p>`,async()=>{
+    openDialog('登録内容の確認',`<p class="step-hint">1 用途・管理名を指定 → <strong>2 内容を確認</strong></p><p>${esc(data.get('useCase'))} ／ ${esc(data.get('category'))} ／ ${esc(locationLabel(project.groups.find(g=>g.id===data.get('groupId'))))}</p><div class="registration-preview"><ul>${targets.map(target=>`<li>${esc(target.name)}</li>`).join('')}</ul></div><p class="hint">${targets.length}件を追加します。取消なら何も変わりません。</p>`,async()=>{
       await persist(next,originals);project=next;dirty=true;invalidateOutput();
       useCaseFilter=data.get('useCase');activeGroupId=data.get('groupId')||'';activeTargetId=targets[0]?.id||'';activeRecordId=targets[0]?.records[0]?.id||'';
       notify(`${targets.length}件の記録対象を追加しました。`);
-    },'この内容で登録');
-  }, '登録内容を確認');
+    },'登録する');
+  }, '内容を確認');
   let savedName = ''; let savedPrefix;let savedTemplate;
   $('editorForm').onchange = event => {
     const form = $('editorForm');
@@ -670,38 +682,38 @@ function addRecordDialog() {
   const definition = USE_CASES[target.useCase];
   const categories = definition.categories.filter(category => !target.records.some(record => record.category === category));
   if (!categories.length) return;
-  openDialog(`${target.name}に記録を追加`, `<div class="dialog-fields">${selectField(`追加する${definition.categoryLabel}`,options(categories,categories[0]),{name:'category'})}</div><p class="hint">同じ管理対象に別区分の撮影枠を追加します。以前の写真・黒板・撮影状態は保持します。</p>`, async data => {
-    const record = await mutate(next => addRecord(next, target.id, data.get('category')), '区分別の記録を追加しました。'); activeRecordId = record.id;
+  openDialog(`${target.name}に記録を追加`, `<div class="dialog-fields">${selectField(`追加する${definition.categoryLabel}`,options(categories,categories[0]),{name:'category'})}</div><p class="hint">同じ記録対象に別区分の撮影枠を追加します。既存の写真・黒板・状態はそのままです。</p>`, async data => {
+    const record = await mutate(next => addRecord(next, target.id, data.get('category')), '記録を追加しました。'); activeRecordId = record.id;
   }, '記録を追加');
 }
 
 function unnecessaryDialog(recordId, slotName) {
   const { target, record } = getContext(project, recordId);
   const slot = record.slots.find(item => item.name === slotName);
-  openDialog('撮影不要の理由', `<p class="hint">${esc(target.name)} ／ ${esc(record.category)} ／ ${esc(slotName)}</p><div class="dialog-fields">${field('撮影しない理由', 'reason', slot.reason, { max: 1000, multiline: true })}</div><p class="hint">理由を付けた枠は完了として扱います。既存の原本は履歴に残ります。</p>`, async data => {
-    await mutate(next => setSlotStatus(next, recordId, slotName, 'unnecessary', data.get('reason')), '撮影不要の理由を保存しました。');
+  openDialog('撮影不要の理由', `<p class="hint">${esc(target.name)} ／ ${esc(record.category)} ／ ${esc(slotName)}</p><div class="dialog-fields">${field('撮影しない理由', 'reason', slot.reason, { max: 1000, multiline: true })}</div><p class="hint">理由を付けた枠は完了扱いです。既存の原本は履歴に残ります。</p>`, async data => {
+    await mutate(next => setSlotStatus(next, recordId, slotName, 'unnecessary', data.get('reason')), '撮影不要にしました。');
   }, '撮影不要にする');
 }
 
 function nextWorkDateDialog(recordId) {
   const {record}=getContext(project,recordId),value=record.workDateDefault||{value:'',confirmed:false};
-  openDialog('次回用の作業日を設定',`<div class="dialog-fields">${field('次の写真の作業日','workDate',value.value,{type:'date',required:false})}</div><p class="dialog-note">この記録から次に撮影・選択する写真に使います。既存写真・黒板の日付は変更しません。未指定時は当日の日付を自動入力します。完成版の条件に影響しません。</p>`,data=>mutate(next=>setNextWorkDate(next,recordId,{value:data.get('workDate'),confirmed:data.get('confirmed')==='on'}),'次回用の作業日を保存しました。既存写真は変更していません。'));
+  openDialog('次回用の作業日を設定',`<div class="dialog-fields">${field('次の写真の作業日','workDate',value.value,{type:'date',required:false})}</div><p class="dialog-note">次に撮影・選択する写真に使います。空欄なら当日の日付です。既存の写真・黒板は変わりません。完成版の条件には影響しません。</p>`,data=>mutate(next=>setNextWorkDate(next,recordId,{value:data.get('workDate'),confirmed:data.get('confirmed')==='on'}),'次回用の作業日を保存しました。'));
 }
 
 function photoDateDialog(id) {
   const photo=project.photos.find(item=>item.id===id);
-  openDialog('この写真の作業日を確認・訂正',`<p class="hint">${esc(photo.originalName)}<br>${esc(captureSourceLabel(photo))}<br>取込日時：${esc(timestampLabel(photo.importedAt))}<br>実際の撮影日時：${esc(timestampLabel(photo.capturedAt))}</p>${dateState(photo)==='legacy'?'<p class="dialog-note">既存値の日付の出所・確認状態は旧ZIPだけでは判断できません。値を自動的に確認済みにはしていません。</p>':''}<div class="dialog-fields">${field('この写真の作業日（任意）','workDate',photo.workDate,{type:'date',required:false})}${hasBoardDate(photo.board)?`<p>黒板日付：${esc(photo.board.values.date||'空欄')}${photo.workDate!==photo.board.values.date?'（作業日と異なります）':''}</p>${selectField('黒板日付との反映方法',optionItems([['none','作業日だけを保存（黒板は保持）'],['board-to-work','黒板の日付を作業日へ明示反映'],['work-to-board','指定した作業日をこの写真の黒板へ明示反映']]),{name:'sync'})}`:''}</div><p class="hint">原本・写真ID・所属・取込日時は変えません。作業日の訂正は任意です。日付とその確認状態は完成版の条件に影響しません。</p>`,async data=>{
-    await mutate(next=>{setPhotoWorkDate(next,id,{value:data.get('workDate'),confirmed:data.get('confirmed')==='on',sync:data.get('sync')||'none'});const changed=next.photos.find(item=>item.id===id);if(data.get('sync')==='work-to-board'&&changed.applyBoard)boardFits(changed.board,{skipPoint:isTrial(getContext(next,changed.recordId).target.useCase)});},'作業日を保存しました。黒板の日付は選択した反映方法に従っています。');
+  openDialog('作業日の確認・訂正',`<p class="hint">${esc(photo.originalName)}<br>${esc(captureSourceLabel(photo))}<br>取込日時：${esc(timestampLabel(photo.importedAt))}<br>実際の撮影日時：${esc(timestampLabel(photo.capturedAt))}</p>${dateState(photo)==='legacy'?'<p class="dialog-note">旧ZIPのため、日付の出所を判断できません。自動では確認済みにしません。</p>':''}<div class="dialog-fields">${field('作業日（任意）','workDate',photo.workDate,{type:'date',required:false})}${hasBoardDate(photo.board)?`<p>黒板日付：${esc(photo.board.values.date||'空欄')}${photo.workDate!==photo.board.values.date?'（作業日と不一致）':''}</p>${selectField('黒板日付の扱い',optionItems([['none','作業日だけ保存（黒板は変えない）'],['board-to-work','黒板の日付を作業日にする'],['work-to-board','作業日を黒板の日付にする']]),{name:'sync'})}`:''}</div><p class="hint">原本・所属・取込日時は変わりません。作業日は完成版の条件に影響しません。</p>`,async data=>{
+    await mutate(next=>{setPhotoWorkDate(next,id,{value:data.get('workDate'),confirmed:data.get('confirmed')==='on',sync:data.get('sync')||'none'});const changed=next.photos.find(item=>item.id===id);if(data.get('sync')==='work-to-board'&&changed.applyBoard)boardFits(changed.board,{skipPoint:isTrial(getContext(next,changed.recordId).target.useCase)});},'作業日を保存しました。');
   });
 }
 
 function reportSettingsDialog() {
   const initial=activeGroupId!=='__all__'?activeGroupId||'':'';
-  const fields=groupId=>Object.entries(getReportItemNames(project,groupId||null)).map(([useCase,value])=>`${field(`${useCase}の項目名`,`item-${useCase}`,groupId?project.reportSettings?.groups?.[groupId]?.[useCase]||'':project.reportSettings?.defaults?.[useCase]||'',{required:false,max:300,multiline:true})}<p class="hint">現在の有効名：${esc(value)}。${groupId?'空欄で工事既定へ戻ります。':'空欄で用途の初期名へ戻ります。'}</p>`).join('');
-  openDialog('簡易帳票の項目名を設定',`<div class="dialog-fields">${selectField('設定する範囲',optionItems([['','工事全体の既定（グループ別指定がない記録）'],...project.groups.map(group=>[group.id,`${locationLabel(group)}だけ`])],initial),{name:'settingsGroup'})}<div id="reportItemFields" class="dialog-fields">${fields(initial)}</div></div><p class="dialog-note">固定された用途別の「項目名」を設定します。列の増減や任意帳票の設計ではありません。グループ別指定は工事既定より優先されます。変更された項目名を使う調書は要再確認になります。</p>`,async data=>{
+  const fields=groupId=>Object.entries(getReportItemNames(project,groupId||null)).map(([useCase,value])=>`${field(`${useCase}の項目名`,`item-${useCase}`,groupId?project.reportSettings?.groups?.[groupId]?.[useCase]||'':project.reportSettings?.defaults?.[useCase]||'',{required:false,max:300,multiline:true})}<p class="hint">現在：${esc(value)}。${groupId?'空欄なら工事全体の設定を使います。':'空欄なら初期名を使います。'}</p>`).join('');
+  openDialog('帳票の項目名',`<div class="dialog-fields">${selectField('設定する範囲',optionItems([['','工事全体（路線別の指定がない記録）'],...project.groups.map(group=>[group.id,`${locationLabel(group)}だけ`])],initial),{name:'settingsGroup'})}<div id="reportItemFields" class="dialog-fields">${fields(initial)}</div></div><p class="dialog-note">用途ごとの「項目名」を設定します。列は変えられません。路線別の設定が優先です。変更した項目名の調書は要再確認になります。</p>`,async data=>{
     const names=Object.fromEntries(Object.keys(USE_CASES).map(useCase=>[useCase,data.get(`item-${useCase}`)]));
     const next=updateReportItemNames(project,{groupId:data.get('settingsGroup')||null,names});
-    await persist(next,originals);project=next;dirty=true;invalidateOutput();notify('帳票の項目名を保存しました。関係する調書を確認してください。');
+    await persist(next,originals);project=next;dirty=true;invalidateOutput();notify('項目名を保存しました。調書を再確認してください。');
   });
   $('editorForm').onchange=event=>{if(event.target.name==='settingsGroup')$('reportItemFields').innerHTML=fields(event.target.value);};
 }
@@ -710,10 +722,10 @@ function editPhotoDialog(id) {
   const photo = project.photos.find(item => item.id === id);
   const context = getContext(project, photo.recordId);
   if (context.target.useCase === 'MMS'||(context.target.useCase==='TS出来形(バリアフリー)'&&photo.slot==='スマホスクリーンショット')) return;
-  openDialog('この写真の黒板を修正', `<p class="hint">${esc(context.target.name)} ／ ${esc(context.record.category)} ／ ${esc(photo.slot)}</p><div class="dialog-fields"><div id="photoBoardEditor" class="board-form">${boardFields(photo.board || context.record.boardDefaults,photo.applyBoard,true,{omitPoint:isTrial(context.target.useCase)})}</div>${checkbox('電子黒板を合成する',{name:'applyBoard',checked:photo.applyBoard})}</div><p class="hint">この写真の黒板を更新し、位置→測点、備考→調書の備考を反映します。原本と変更前の黒板は保持します。</p>`, async data => {
+  openDialog('写真の黒板を修正', `<p class="hint">${esc(context.target.name)} ／ ${esc(context.record.category)} ／ ${esc(photo.slot)}</p><div class="dialog-fields"><div id="photoBoardEditor" class="board-form">${boardFields(photo.board || context.record.boardDefaults,photo.applyBoard,true,{omitPoint:isTrial(context.target.useCase)})}</div>${checkbox('電子黒板を合成する',{name:'applyBoard',checked:photo.applyBoard})}</div><p class="hint">位置は測点、備考は調書の備考に反映します。原本と変更前の黒板は残ります。</p>`, async data => {
     const board = readBoard($('editorForm')); const applyBoard = data.get('applyBoard') === 'on';
     if (applyBoard) boardFits(board,{skipPoint:isTrial(context.target.useCase)});
-    await mutate(next => { savePhotoBoard(next,id,board,applyBoard); }, '写真の黒板と対応する調書欄を保存しました。作業日は変更していません。');
+    await mutate(next => { savePhotoBoard(next,id,board,applyBoard); }, '写真の黒板と調書を更新しました。');
   });
   $('editorForm').onchange = event => { if (['templateId','applyBoard'].includes(event.target.name)) $('photoBoardEditor').innerHTML = boardFields(readBoard($('editorForm')),$('editorForm').elements.applyBoard.checked,true,{omitPoint:isTrial(context.target.useCase)}); };
 }
@@ -721,10 +733,10 @@ function editPhotoDialog(id) {
 function showImportReview(data) {
   const same = bundleId === data.bundleId; const counts = summarize(data.project);
   const uses = [...new Set(data.project.targets.map(item => item.useCase))].join('・');
-  openDialog('読み込む作業を確認', `<div class="dialog-fields">${panelHeading(data.project.name,{eyebrow:'WORK PACKAGE',level:3})}<p>${data.project.targets.length}記録対象・${counts.records}記録・原本${data.project.photos.length}枚<br>用途：${esc(uses || '未登録')}<br>${data.project.groups.length ? `${data.project.groups.length}グループ（任意）` : 'グループなし・工事直下'}</p><p class="dialog-note">${same ? '同じ受渡ファイルです。' : ''}${project ? '現在の作業をこの内容に切り替えます。必要な変更は先にZIPへ保存してください。' : '原本と黒板・所属の検証が完了しました。'} 写真の自動追加・統合は行いません。</p></div>`, async () => {
+  openDialog('読み込む作業の確認', `<div class="dialog-fields">${panelHeading(data.project.name,{eyebrow:'WORK PACKAGE',level:3})}<p>${data.project.targets.length}記録対象・${counts.records}記録・原本${data.project.photos.length}枚<br>用途：${esc(uses || '未登録')}<br>${data.project.groups.length ? `路線${data.project.groups.length}件` : '路線なし'}</p><p class="dialog-note">${same ? '前回と同じZIPです。' : ''}${project ? '今の作業から切り替えます。先に作業ZIPを保存してください。' : '検証が完了しました。'} 写真の自動追加や統合はしません。</p></div>`, async () => {
     await replaceWork(data.project, data.originals, data.bundleId||null); mode = 'organize';
-    notify(`作業ZIPを開きました。${data.project.photos.length}枚の原本・用途・黒板・所属を復元しました。`);
-  }, 'この作業を開く');
+    notify(`作業ZIPを開きました（原本${data.project.photos.length}枚）。`);
+  }, '開く');
 }
 
 function download(blob, filename) {
@@ -740,32 +752,32 @@ async function savePackage() {
   if (!project) return;
   await flushBoardDrafts(true);
   await flushReportDrafts(true);
-  showProgress('作業ZIPを準備しています…');
+  showProgress('作業ZIPを準備中…');
   const result = await cancellable(signal=>exportWorkPackage(project, originals, { onProgress: showProgress,signal }));
   download(result.blob, result.filename);
   bundleId = result.bundleId; dirty = false; lastExportAt = new Date();
   let persistenceIssue = '';
   if (storage) {
     try { await sessionSaver.pause();await storage.save(project, originals, sessionSnapshot(project));sessionSaver.reset(); }
-    catch (error) { persistenceIssue = ` 一時保存は更新できませんでした：${error.message}`; }
+    catch (error) { persistenceIssue = ` 一時保存の更新に失敗しました：${error.message}`; }
   }
-  notify(`作業ZIPのダウンロードを開始しました。保存先でファイルを確認してから、PCへ渡してください。${persistenceIssue}`, Boolean(persistenceIssue));
+  notify(`作業ZIPをダウンロードしました。保存先を確認してください。${persistenceIssue}`, Boolean(persistenceIssue));
 }
 
 function beginCapture(recordId, slotName, source) {
   if (busy) return;
-  if(pendingPhoto){notify('未保存の写真があります。再試行または写真取込の取消をしてから次の写真を選んでください。',true);return;}
-  if(project.photos.length>=LIMITS.photos||project.photos.reduce((sum,photo)=>sum+photo.size,0)>=LIMITS.totalBytes){notify(`工事全体の上限（履歴込み${LIMITS.photos}枚・${formatByteLimit()}）に達しています。新しい撮影・写真選択は開始していません。必要な原本とZIPを保管してから整理してください。`,true);return;}
-  if (source === 'camera' && !storage) { notify('現場でのカメラ撮影には一時保存が必要です。通常モードのブラウザーで開き直してください。「写真から選ぶ」はメモリ上で取り込めます。', true); return; }
+  if(pendingPhoto){notify('未保存の写真があります。再試行か取消をしてください。',true);return;}
+  if(project.photos.length>=LIMITS.photos||project.photos.reduce((sum,photo)=>sum+photo.size,0)>=LIMITS.totalBytes){notify(`上限（履歴込み${LIMITS.photos}枚・${formatByteLimit()}）に達しました。作業ZIPを保存してから写真を整理してください。`,true);return;}
+  if (source === 'camera' && !storage) { notify('カメラ撮影には一時保存が必要です。通常モードのブラウザーで開き直してください。「写真から選ぶ」は使えます。', true); return; }
   const context = getContext(project, recordId);
   const form = recordId===activeRecordId?$('boardForm'):null;
-  if(!context.group){notify('撮影・写真選択の前に「管理名・所属を訂正」で路線名を設定してください。',true);return;}
+  if(!context.group){notify('先に「管理名・所属を訂正」で路線を設定してください。',true);return;}
   const draft=boardDrafts.get(recordId)||{board:context.record.boardDefaults,applyBoard:context.record.applyBoardDefault!==false,noteMode:recordNoteMode(context.target,context.record)};
   const resolved=resolveCaptureBoard(project,recordId,slotName,{board:recordId===activeRecordId&&form?readBoard(form):draft.board,noteMode:draft.noteMode});
   const screenshot=context.target.useCase==='TS出来形(バリアフリー)'&&slotName==='スマホスクリーンショット';
   const board=screenshot?null:resolved.board;
   const applyBoard = !screenshot && context.target.useCase !== 'MMS' && Boolean((recordId===activeRecordId?form?.elements.namedItem('applyBoard')?.checked:undefined) ?? draft.applyBoard);
-  if (form && applyBoard && !form.checkValidity()) {form.closest('details').open=true;form.reportValidity();notify('黒板の未入力項目を確認してください。',true);return;}
+  if (form && applyBoard && !form.checkValidity()) {form.closest('details').open=true;form.reportValidity();notify('黒板に未入力の項目があります。',true);return;}
   if (board && applyBoard) boardFits(board,{skipPoint:isTrial(context.target.useCase)});
   activeTargetId=context.target.id;activeRecordId=recordId;activeCaptureSlot=screenshot?context.record.slots[0].name:slotName;
   if(board){boardDrafts.set(recordId,{board,applyBoard,noteMode:resolved.noteMode});if(form){form.elements.namedItem('board-note').value=board.values.note;const caption=$('captureBoardSlot');if(caption)caption.textContent=`対象写真：${slotName}`;drawPreview();}}
@@ -773,7 +785,7 @@ function beginCapture(recordId, slotName, source) {
   const workDate=defaults?.value || dateToday();
   pendingCapture={projectId:project.id,recordId,slot:slotName,board,defaultBoard:board,tsBoard:screenshot?resolved.board:null,applyBoard,noteMode:resolved.noteMode,workDate,workDateStatus:'unconfirmed',source:source==='camera'?'camera':'library',paste:source==='paste'};
   if(source==='paste'){
-    openDialog('スマホスクリーンショットを貼り付け',`<div id="screenshotPasteArea" class="screenshot-paste-area" tabindex="0"><p>PCで画像をコピーして、この枠でCtrl+Vを押してください。</p><p class="hint">${esc(context.target.name)}の右側に保存します。画像を加工したり黒板を合成したりしません。</p></div>`,()=>{},'閉じる');
+    openDialog('スマホスクリーンショットを貼り付け',`<div id="screenshotPasteArea" class="screenshot-paste-area" tabindex="0"><p>画像をコピーし、この枠でCtrl+Vを押してください。</p><p class="hint">${esc(context.target.name)}の右側に保存します。画像の加工や黒板の合成はしません。</p></div>`,()=>{},'閉じる');
     $('screenshotPasteArea').focus();return;
   }
   const input=source==='camera'?$('cameraInput'):$('photoInput');input.value='';input.disabled=false;input.click();
@@ -790,9 +802,9 @@ async function retryPendingPhoto(){
   if(!pendingPhoto)return;
   const {file,capture}=pendingPhoto;
   await run(()=>cancellable(async signal => {
-    if (!project || capture.projectId !== project.id) throw new Error('撮影開始時と工事が変わっています。正しい記録対象から選び直してください。');
-    if (project.photos.length >= LIMITS.photos || project.photos.reduce((n, p) => n + p.size, 0) + file.size > LIMITS.totalBytes) throw new Error(`工事全体の上限は履歴を含め${LIMITS.photos}枚・原本合計${formatByteLimit()}です。新しい写真は追加していません。`);
-    showProgress('写真を検証し、一時保存しています…');
+    if (!project || capture.projectId !== project.id) throw new Error('撮影開始後に工事が切り替わりました。記録対象から選び直してください。');
+    if (project.photos.length >= LIMITS.photos || project.photos.reduce((n, p) => n + p.size, 0) + file.size > LIMITS.totalBytes) throw new Error(`上限（履歴込み${LIMITS.photos}枚・原本合計${formatByteLimit()}）を超えるため、追加していません。`);
+    showProgress('写真を確認して保存中…');
     const dimensions = await validateImage(file,{signal});
     const next = clone(project);
     let tsRead=null,tsEffect={keys:[],boardChanged:false};
@@ -814,7 +826,7 @@ async function retryPendingPhoto(){
     if(tsEffect.boardChanged)boardDrafts.delete(capture.recordId);clearReportKeys.forEach(key=>reportDrafts.delete(key));
     const { target, record } = getContext(project, capture.recordId);
     pendingPhoto=null;
-    notify(`${target.name} ／ ${record.category} ／ ${capture.slot} を${storage ? 'この端末へ保存' : '取り込み'}しました。${tsRead?(tsRead.complete?'計測箇所・X・Yを調書と黒板へ反映しました。出力前に読み取り結果を確認してください。':`読取未完了：${tsRead.missing.join('・')}。読めた項目だけ反映しました。調書で確認・入力してください。${tsRead.message||''}`):'原本は加工していません。'}`,Boolean(tsRead&&!tsRead.complete));
+    notify(`${target.name} ／ ${record.category} ／ ${capture.slot} を${storage ? '保存' : '取り込み'}しました。${tsRead?(tsRead.complete?'計測箇所・X・Yを調書と黒板に反映しました。出力前に確認してください。':`読み取れない項目：${tsRead.missing.join('・')}。調書で確認・入力してください。${tsRead.message||''}`):''}`,Boolean(tsRead&&!tsRead.complete));
   }));
 }
 
@@ -833,10 +845,10 @@ function captureView({group,target,record,visible}){
   if(record){
     const def=USE_CASES[target.useCase],remaining=def.categories.filter(c=>!target.records.some(r=>r.category===c));
     const tabs=record=>tabBar(target.records.map(r=>tabButton(`${def.categoryLabel}：${r.category}`,{selected:r.id===record.id,attrs:{'data-record':r.id}})).join('')+(remaining.length?button(`＋ ${def.categoryLabel}の記録を追加`,{className:'add-record',attrs:{'data-action':'add-record'}}):''),{label:def.categoryLabel,className:'record-tabs'});
-    selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title${nameDrafts.has(target.id)?' is-editing':''}">${inlineTargetName(target)}${renderTargetNavigation(visible,target.id)}${badge(target.useCase)}${button('管理名・所属を訂正',{variant:'subtle',attrs:{'data-edit-target':target.id}})}</div><p class="hint">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">分類の区分を確認してから、写真の種類を選んでください。</p>${tabs(record)}${target.useCase==='TS出来形(バリアフリー)'?renderTSReading(record):''}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div></section>`;
-    if(target.useCase==='MMS')board='<section class="panel"><p class="hint">MMSは作業の前・後の写真を原本のまま記録します。黒板・座標・施工区間・調書入力は不要です。</p></section>';
+    selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title${nameDrafts.has(target.id)?' is-editing':''}">${inlineTargetName(target)}${renderTargetNavigation(visible,target.id)}${badge(target.useCase)}${button('管理名・所属を訂正',{variant:'subtle',attrs:{'data-edit-target':target.id}})}</div><p class="hint keep">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">区分を確認してから写真の種類を選んでください。</p>${tabs(record)}${target.useCase==='TS出来形(バリアフリー)'?renderTSReading(record):''}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div></section>`;
+    if(target.useCase==='MMS')board='<section class="panel"><p class="hint">MMSは作業前後の写真を原本のまま記録します。黒板・座標・施工区間・調書は不要です。</p></section>';
     else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false,{omitPoint:isTrial(target.useCase),fixedTS:target.useCase==='TS出来形(バリアフリー)'}),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id)});}
-  }else selected=emptyState('記録対象を追加','路線を設定し、用途と管理名を指定して始めます。施工区間は任意です。',{actions:button('記録対象を追加',{variant:'primary',attrs:{'data-action':'add-targets'}})});
+  }else selected=emptyState('記録対象を追加','用途と管理名を指定して登録します。施工区間は任意です。',{actions:button('記録対象を追加',{variant:'primary',attrs:{'data-action':'add-targets'}})});
   return `${renderCaptureProgress(summary)}<div class="capture-layout">${picker}<div class="capture-main">${selected}${board}</div></div>${record?historyPanel(record.id):''}`;
 }
 function slotHTML(record,slot){
@@ -849,7 +861,7 @@ function historyPanel(recordId=null){
 }
 function handoffView(){
   const counts=summarize(project),bytes=project.photos.reduce((n,p)=>n+p.size,0);
-  return renderHandoff({targetCount:project.targets.length,photoCount:project.photos.length,sizeValue:formatBytes(bytes).split(' ')[0],sizeUnit:formatBytes(bytes).split(' ')[1],lastExportLabel:lastExportAt?`${lastExportAt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}にダウンロード開始。保存先でファイルを確認してください。`:'',missing:counts.missing,unnecessary:counts.unnecessary,maxPhotos:LIMITS.photos,limitLabel:formatBytes(LIMITS.totalBytes)});
+  return renderHandoff({targetCount:project.targets.length,photoCount:project.photos.length,sizeValue:formatBytes(bytes).split(' ')[0],sizeUnit:formatBytes(bytes).split(' ')[1],lastExportLabel:lastExportAt?`${lastExportAt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}にダウンロード。保存先を確認してください。`:'',missing:counts.missing,unnecessary:counts.unnecessary,maxPhotos:LIMITS.photos,limitLabel:formatBytes(LIMITS.totalBytes)});
 }
 
 function drawPreview() {
@@ -928,15 +940,15 @@ function render() {
 }
 
 function renderDraftNotice(){
-  const photoActions=pendingPhoto?button('写真の保存を再試行',{attrs:{'data-action':'retry-photo'}})+button('写真取込を取消',{attrs:{'data-action':'discard-photo'}}):'';
-  const draftActions=photoActions+(nameDrafts.size?button('管理名の保存・取消',{attrs:{'data-action':'resolve-names'}}):'')+(pendingPaste?button('貼り付けの下書きを再開',{attrs:{'data-action':'resume-paste'}})+button('貼り付けを取消',{attrs:{'data-action':'discard-paste'}}):'');
-  feedback.setDraftNotice({visible:Boolean(draftActions),text:pendingPhoto?'写真取込を画面内に保持中（再読込時は選び直し）':`未確定の下書き ${draftCounts()}件`,actionsHTML:draftActions});
+  const photoActions=pendingPhoto?button('写真の保存を再試行',{attrs:{'data-action':'retry-photo'}})+button('写真を取消',{attrs:{'data-action':'discard-photo'}}):'';
+  const draftActions=photoActions+(nameDrafts.size?button('管理名の保存・取消',{attrs:{'data-action':'resolve-names'}}):'')+(pendingPaste?button('貼り付けを再開',{attrs:{'data-action':'resume-paste'}})+button('貼り付けを取消',{attrs:{'data-action':'discard-paste'}}):'');
+  feedback.setDraftNotice({visible:Boolean(draftActions),text:pendingPhoto?'未保存の写真があります（再読み込みすると選び直し）':`未確定の下書き ${draftCounts()}件`,actionsHTML:draftActions});
 }
 
 function organizeView(){
   organizeState.groupId=activeGroupId;
   const targets=project.targets.filter(t=>(activeGroupId==='__all__'||t.groupId===(activeGroupId||null))&&(!organizeState.useCase||t.useCase===organizeState.useCase));
-  return renderOrganizeView({project,state:organizeState,esc,bytesLabel,workDateLabel,locationLabel})+disclosure(`記録対象の管理名・所属 ${targets.length}件`,targets.map(t=>`<div class="organize-target">${inlineTargetName(t)}<span class="hint">${esc(t.useCase)} ／ ${esc(locationLabel(project.groups.find(g=>g.id===t.groupId)))}</span>${button('所属も訂正',{attrs:{'data-edit-target':t.id}})}</div>`).join(''),{className:'panel organize-targets',saveKey:'organize-targets'});
+  return renderOrganizeView({project,state:organizeState,esc,bytesLabel,workDateLabel,locationLabel})+disclosure(`記録対象の管理名・所属 ${targets.length}件`,targets.map(t=>`<div class="organize-target">${inlineTargetName(t)}<span class="hint keep">${esc(t.useCase)} ／ ${esc(locationLabel(project.groups.find(g=>g.id===t.groupId)))}</span>${button('所属を訂正',{attrs:{'data-edit-target':t.id}})}</div>`).join(''),{className:'panel organize-targets',saveKey:'organize-targets'});
 }
 
 function finishNameEdit(id){
@@ -974,10 +986,10 @@ function renderPhotoDrawer() {
   const title=`${context?.target.name||photo.originalName} ／ ${photo.slot||'未分類'}`;
   const subtitle=locationLabel(context?.group)+(context?` ／ ${context.target.useCase} ／ ${context.record.category}`:'');
   const dateSection=detailSection('作業日',photoDateDetails(photo),{actionHTML:button('確認・訂正',{attrs:{'data-edit-date':photo.id}})});
-  const assignment=detailSection('所属・写真の種類',`<p class="hint">${esc(context?contextText({...context,slot:{name:photo.slot}}):'分類待ち')}</p>${context?button('この記録の撮影・確認へ',{attrs:{'data-go-record':photo.recordId}}):''}`,{actionHTML:button('訂正',{attrs:{'data-move-photo':photo.id}})});
-  const boardSection=(photo.board||context&&context.target.useCase!=='MMS')&&!(context?.target.useCase==='TS出来形(バリアフリー)'&&photo.slot==='スマホスクリーンショット')?disclosure(`この写真の黒板・合成 ${photo.applyBoard?'あり':'なし'}`,(photo.board?button('<canvas id="detailBoard" width="600" class="board-canvas" aria-label="保存された黒板"></canvas>',{html:true,className:'preview-trigger',attrs:{'data-preview-canvas':'detailBoard','aria-label':'保存された黒板を拡大'}}):'<p class="hint">この写真には黒板データがありません。必要ならこの写真だけに追加できます。</p>')+`<p class="details-text">${esc(boardDescription(photo.board)).replaceAll('\n','<br>')}</p>`+(context?.target.useCase!=='MMS'?actions(button('この写真の黒板を修正',{attrs:{'data-edit-photo':photo.id}})+button('合成画像を拡大',{attrs:{'data-preview-composed':photo.id}})+button('合成画像を保存',{attrs:{'data-composed':photo.id}})):''),{className:'detail-section',saveKey:'drawer-board'}):'';
-  const history=disclosure(`同じ撮影枠の写真履歴 ${related.length}枚`,photoTimeline(related.map(p=>({id:p.id,name:p.originalName,active:Boolean(context&&getSlotState(project,p.recordId,p.slot).photo?.id===p.id),current:p.id===photo.id,importedLabel:timestampLabel(p.importedAt),dateLabel:workDateLabel(p)})))+(context&&!active?button('表示中の写真を採用',{attrs:{'data-adopt':photo.id}}):''),{className:'detail-section',saveKey:'drawer-history'});
-  const original=disclosure('原本情報・保存・削除',metaList([['原本名',photo.originalName],['容量・寸法',`${bytesLabel(photo.size)}・${photo.width} × ${photo.height}px`],['写真ID',photo.id]])+actions((context?button('写真を選び直す（旧写真は履歴に保持）',{attrs:{'data-replace-photo':photo.id}}):'')+button('元写真を保存',{attrs:{'data-original':photo.id}})+button('この写真を削除',{variant:'danger',attrs:{'data-delete-photo':photo.id}}))+'<p class="hint">削除は影響確認後に実行します。再撮影や要撮り直しとは別の操作です。</p>',{className:'detail-section',saveKey:'drawer-original'});
+  const assignment=detailSection('所属・写真の種類',`<p class="hint keep">${esc(context?contextText({...context,slot:{name:photo.slot}}):'分類待ち')}</p>${context?button('撮影画面へ',{attrs:{'data-go-record':photo.recordId}}):''}`,{actionHTML:button('訂正',{attrs:{'data-move-photo':photo.id}})});
+  const boardSection=(photo.board||context&&context.target.useCase!=='MMS')&&!(context?.target.useCase==='TS出来形(バリアフリー)'&&photo.slot==='スマホスクリーンショット')?disclosure(`この写真の黒板・合成 ${photo.applyBoard?'あり':'なし'}`,(photo.board?button('<canvas id="detailBoard" width="600" class="board-canvas" aria-label="保存された黒板"></canvas>',{html:true,className:'preview-trigger',attrs:{'data-preview-canvas':'detailBoard','aria-label':'保存された黒板を拡大'}}):'<p class="hint keep">黒板データがありません。この写真だけに追加できます。</p>')+`<p class="details-text">${esc(boardDescription(photo.board)).replaceAll('\n','<br>')}</p>`+(context?.target.useCase!=='MMS'?actions(button('黒板を修正',{attrs:{'data-edit-photo':photo.id}})+button('合成画像を拡大',{attrs:{'data-preview-composed':photo.id}})+button('合成画像を保存',{attrs:{'data-composed':photo.id}})):''),{className:'detail-section',saveKey:'drawer-board'}):'';
+  const history=disclosure(`同じ撮影枠の履歴 ${related.length}枚`,photoTimeline(related.map(p=>({id:p.id,name:p.originalName,active:Boolean(context&&getSlotState(project,p.recordId,p.slot).photo?.id===p.id),current:p.id===photo.id,importedLabel:timestampLabel(p.importedAt),dateLabel:workDateLabel(p)})))+(context&&!active?button('この写真を採用',{attrs:{'data-adopt':photo.id}}):''),{className:'detail-section',saveKey:'drawer-history'});
+  const original=disclosure('原本・保存・削除',metaList([['原本名',photo.originalName],['容量・寸法',`${bytesLabel(photo.size)}・${photo.width} × ${photo.height}px`],['写真ID',photo.id]])+actions((context?button('写真を選び直す（旧写真は履歴へ）',{attrs:{'data-replace-photo':photo.id}}):'')+button('元写真を保存',{attrs:{'data-original':photo.id}})+button('写真を削除',{variant:'danger',attrs:{'data-delete-photo':photo.id}}))+'<p class="hint">削除前に影響を確認します。撮り直しとは別の操作です。</p>',{className:'detail-section',saveKey:'drawer-original'});
   const browse=mode==='organize'?filterPhotos(project,organizeState):project.photos.filter(p=>p.recordId===photo.recordId),at=browse.findIndex(p=>p.id===photo.id);
   body.innerHTML=(at>=0?photoPagination({previousId:browse[at-1]?.id,nextId:browse[at+1]?.id,index:at,total:browse.length}):'')+detailHero({photoId:photo.id,title,subtitle,status:active?'採用中':context?'履歴':'分類待ち',tone:active?'success':'muted'})+dateSection+assignment+boardSection+(photo.boardRevisions?.length?disclosure(`黒板の訂正履歴 ${photo.boardRevisions.length}件`,photo.boardRevisions.map(revision=>`<p>${esc(timestampLabel(revision.changedAt))}</p><pre>${esc(boardDescription(revision.board))}</pre>`).join(''),{className:'detail-section',saveKey:'drawer-board-revisions'}):'')+history+original;
   if(drawerImagePhotoId!==photo.id){if(drawerImageURL)URL.revokeObjectURL(drawerImageURL);drawerImageURL=URL.createObjectURL(originals.get(photo.id));drawerImagePhotoId=photo.id;}
@@ -992,7 +1004,7 @@ previewViewer=createPreviewViewer({onDocumentMove:frame=>{outputState.ready=fals
 $('newProject').onclick = newProjectDialog;
 $('openPackage').onclick = () => { $('workMenu').open=false;$('packageInput').value = ''; $('packageInput').click(); };
 $('exportPackage').onclick = () => run(savePackage);
-$('cancelOperation').onclick=()=>{if(activeOperation){activeOperation.abort();$('cancelOperation').disabled=true;showProgress('取消処理をしています…');}};
+$('cancelOperation').onclick=()=>{if(activeOperation){activeOperation.abort();$('cancelOperation').disabled=true;showProgress('取り消し中…');}};
 $('closeDialog').onclick = $('cancelDialog').onclick = () => $('editorDialog').close();
 $('editorDialog').addEventListener('cancel',event=>{if(busy)event.preventDefault();});
 $('editorDialog').addEventListener('close',()=>{if(pendingCapture?.paste)pendingCapture=null;});
@@ -1006,7 +1018,7 @@ $('cameraInput').onchange = receivePhoto;
 $('photoInput').onchange = receivePhoto;
 $('packageInput').onchange = event => {
   const file = event.target.files?.[0];
-  if (file) run(async () => { showProgress('作業ZIPと元写真を検証しています…'); showImportReview(await cancellable(signal=>importWorkPackage(file, { onProgress: showProgress, validateImage,signal }))); });
+  if (file) run(async () => { showProgress('作業ZIPを確認中…'); showImportReview(await cancellable(signal=>importWorkPackage(file, { onProgress: showProgress, validateImage,signal }))); });
 };
 $('app').addEventListener('input', event => {
   if(event.target.id==='initialProjectName'){initialProjectName=event.target.value;return;}
@@ -1018,8 +1030,8 @@ $('app').addEventListener('input', event => {
     reportDrafts.set(key,input.value);dirty=true;invalidateOutput();
     const counter=document.querySelector(`[data-report-counter="${key}"]`);if(counter){counter.textContent=`${input.value.length}/300文字`;counter.className=input.value.length>300?'report-counter-error':'';}
     input.setAttribute('aria-invalid',String(input.value.length>300));
-    if(input.value.length>300)notify('調書は各セル300文字までです。入力は切り捨てず画面に残しています。短くしてから保存してください。',true);
-    const status=$('reportEditStatus');if(status)status.textContent='編集中です。保存・入力確認・ZIP保存時に確定します。';
+    if(input.value.length>300)notify('調書は1セル300文字までです。短くしてから保存してください。',true);
+    const status=$('reportEditStatus');if(status)status.textContent='編集中です。保存・入力確認・ZIP保存で確定します。';
     const discard=document.querySelector('[data-action="discard-reports"]');if(discard){discard.dataset.unavailable='false';discard.disabled=busy;}
     return;
   }
@@ -1033,7 +1045,7 @@ $('app').addEventListener('input', event => {
   dirty = true;invalidateOutput();
   drawPreview();
   const status = $('boardDraftStatus');
-  if (status) status.textContent = '黒板は編集中です。撮影・黒板保存・ZIP保存時に確定します。';
+  if (status) status.textContent = '黒板を編集中です。撮影・保存・ZIP保存で確定します。';
 });
 $('app').addEventListener('compositionend',event=>{if(event.target.dataset.organizeFilter==='query'){organizeState.query=event.target.value;organizeState.selectedIds.clear();render();}});
 $('app').addEventListener('submit', event => {
@@ -1045,7 +1057,7 @@ $('app').addEventListener('submit', event => {
   }
   if(event.target.dataset.inlineTarget){
     event.preventDefault();const id=event.target.dataset.inlineTarget,value=event.target.elements.name.value;
-    run(async()=>{const t=project.targets.find(t=>t.id===id);await mutate(next=>updateTarget(next,id,{name:value,groupId:t.groupId}),'管理名を保存し、調書と採用写真・次回用黒板へ反映しました。',{clearNames:[id]});finishNameEdit(id);});return;
+    run(async()=>{const t=project.targets.find(t=>t.id===id);await mutate(next=>updateTarget(next,id,{name:value,groupId:t.groupId}),'管理名を保存しました。',{clearNames:[id]});finishNameEdit(id);});return;
   }
   if (event.target.id !== 'boardForm') return;
   event.preventDefault();
@@ -1056,7 +1068,7 @@ $('app').addEventListener('submit', event => {
   const noteMode=boardDrafts.get(recordId)?.noteMode||recordNoteMode(target,record);
   run(async () => {
     if (applyBoard) boardFits(board,{skipPoint:isTrial(target.useCase)});
-    await mutate(next => { const { record } = getContext(next, recordId); saveRecordBoard(next,recordId,board,{applyBoard,noteMode}); }, '黒板と対応する調書欄・採用写真を更新しました。原本と訂正履歴は保持しています。',{clearBoardIds:[recordId]});
+    await mutate(next => { const { record } = getContext(next, recordId); saveRecordBoard(next,recordId,board,{applyBoard,noteMode}); }, '黒板・調書・採用写真を更新しました。',{clearBoardIds:[recordId]});
     boardDrafts.delete(recordId);
   });
 });
@@ -1117,6 +1129,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.action==='delete-selected-targets'){targetDeleteDialog([...selectedTargetIds]);return;}
     if(button.dataset.routeSection){routeSectionDialog(button.dataset.routeSection);return;}
     if(button.dataset.tsCommon){tsCommonDialog(button.dataset.tsCommon);return;}
+    if(button.dataset.tsStation){tsStationDialog(button.dataset.tsStation);return;}
     if(button.dataset.pasteScreenshot){beginCapture(button.dataset.pasteScreenshot,'スマホスクリーンショット','paste');return;}
     if(button.dataset.action==='enlarge-output'){openDocumentPreview($('outputPreview'),button);return;}
     if(button.dataset.openPhoto){openPhotoDrawer(button.dataset.openPhoto);return;}
@@ -1129,9 +1142,9 @@ function handleWorkspaceClick(event) {
     if(button.id==='reviewSelectedDates'){const ids=filterPhotos(project,organizeState).filter(p=>organizeState.selectedIds.has(p.id)).map(p=>p.id);reviewDatesDialog(ids);return;}
     if(button.dataset.organizeView){const groupId=activeGroupId;organizeState=createOrganizeState();organizeState.groupId=groupId;const v=button.dataset.organizeView;if(v==='missing')organizeState.onlyMissing=true;if(v==='unconfirmed')organizeState.dateStatus='needs-confirmation';if(v==='stale')organizeState.reportStatus='stale';render();return;}
     if(button.dataset.action==='retry-photo'){void retryPendingPhoto();return;}
-    if(button.dataset.action==='discard-photo'){pendingPhoto=null;$('photoInput').value='';$('cameraInput').value='';renderDraftNotice();notify('未保存の写真取込を取り消しました。保存済みの作業は変更していません。');return;}
+    if(button.dataset.action==='discard-photo'){pendingPhoto=null;$('photoInput').value='';$('cameraInput').value='';renderDraftNotice();notify('未保存の写真を取り消しました。');return;}
     if(button.dataset.action==='resolve-names'){const id=nameDrafts.keys().next().value;if(!id)return;activeGroupId='__all__';useCaseFilter='';onlyMissing=false;activeTargetId=id;activeRecordId='';mode='field';render();const editor=document.querySelector(`[data-name-editor="${CSS.escape(id)}"]`);floating.open(editor,{anchor:document.querySelector('#draftNotice [data-action="resolve-names"]')||button});editor?.querySelector('[data-name-draft]')?.focus({preventScroll:true});return;}
-    if(button.dataset.action==='discard-reports'){const ids=new Set(scopedRecords(project,activeGroupId,reportUseCase).map(c=>c.record.id));for(const key of reportDrafts.keys())if(ids.has(key.slice(0,key.indexOf(':'))))reportDrafts.delete(key);render();notify('表示範囲の保存前の調書編集を取り消しました。別の範囲の下書きは保持しています。');return;}
+    if(button.dataset.action==='discard-reports'){const ids=new Set(scopedRecords(project,activeGroupId,reportUseCase).map(c=>c.record.id));for(const key of reportDrafts.keys())if(ids.has(key.slice(0,key.indexOf(':'))))reportDrafts.delete(key);render();notify('表示中の調書の編集を取り消しました。他の範囲の下書きは残ります。');return;}
     if (button.dataset.action === 'new') { newProjectDialog(); return; }
     if (button.dataset.action === 'open') { $('openPackage').click(); return; }
     if (button.dataset.action === 'export') { run(savePackage); return; }
@@ -1151,8 +1164,8 @@ function handleWorkspaceClick(event) {
     if(button.dataset.action==='save-reports'){run(()=>flushReportDrafts(true));return;}
     if(button.dataset.action==='resume-paste'&&pendingPaste){pasteTextDialog({...pendingPaste.settings,text:pendingPaste.text},pendingPaste.text);return;}
     if(button.dataset.action==='discard-paste'){pendingPaste=null;render();return;}
-    if(button.dataset.action==='discard-board'){boardDrafts.delete(activeRecordId);render();notify('この記録の黒板の下書きを取り消しました。撮影済み写真の黒板は保持しています。');return;}
-    if(button.dataset.action==='review-reports'||button.dataset.reviewRecord){run(async()=>{await flushReportDrafts(true);const ids=button.dataset.reviewRecord?[button.dataset.reviewRecord]:scopedRecords(project,activeGroupId,reportUseCase).map(c=>c.record.id);await mutate(next=>ids.forEach(id=>reviewReport(next,id)),'調書を入力確認済みにしました。撮影完了とは別の状態です。');});return;}
+    if(button.dataset.action==='discard-board'){boardDrafts.delete(activeRecordId);render();notify('黒板の下書きを取り消しました。撮影済みの写真は変わりません。');return;}
+    if(button.dataset.action==='review-reports'||button.dataset.reviewRecord){run(async()=>{await flushReportDrafts(true);const ids=button.dataset.reviewRecord?[button.dataset.reviewRecord]:scopedRecords(project,activeGroupId,reportUseCase).map(c=>c.record.id);await mutate(next=>ids.forEach(id=>reviewReport(next,id)),'調書を入力確認済みにしました。');});return;}
     if(button.dataset.sectionRecord){const c=getContext(project,button.dataset.sectionRecord);routeSectionDialog(c.target.groupId);return;}
     if(button.dataset.reportUse){reportUseCase=button.dataset.reportUse;render();return;}
     if(button.dataset.action==='output-all'){resetOutputSelection();render();return;}
@@ -1164,7 +1177,7 @@ function handleWorkspaceClick(event) {
         await flushBoardDrafts();
         const result=await cancellable(signal=>exportPhotos(project,originals,selectedOutputIds(),{directory,signal,onProgress:showProgress}));
         if(result.blob)download(result.blob,`${project.name}_写真.zip`);
-        notify(`${result.count}枚の写真を${directory?'選択フォルダーに保存しました。':'ZIPで保存しました。展開して利用できます。'}`);
+        notify(`${result.count}枚の写真を${directory?'フォルダーに保存しました。':'ZIPで保存しました。'}`);
       })).catch(error=>{if(error.name!=='AbortError')notify(error.message,true);});return;
     }
     if(button.dataset.action==='prepare-output'){run(prepareOutput);return;}
@@ -1176,7 +1189,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.previewSlot){activeCaptureSlot=button.dataset.previewSlot;render();openCanvasPreview('boardPreview',document.querySelector(`[data-preview-slot="${CSS.escape(activeCaptureSlot)}"]`));return;}
     if (button.dataset.capture) { beginCapture(button.dataset.recordId, button.dataset.capture, button.dataset.source); return; }
     if (button.dataset.unnecessary) { unnecessaryDialog(button.dataset.recordId, button.dataset.unnecessary); return; }
-    if (button.dataset.retake) { run(() => mutate(next => setSlotStatus(next, button.dataset.recordId, button.dataset.retake, 'retake'), '撮り直し待ちにしました。原本と履歴は保持しています。')); return; }
+    if (button.dataset.retake) { run(() => mutate(next => setSlotStatus(next, button.dataset.recordId, button.dataset.retake, 'retake'), '要撮り直しにしました。')); return; }
     if (button.dataset.editPhoto) { editPhotoDialog(button.dataset.editPhoto); return; }
     if(button.dataset.replacePhoto){const photo=project.photos.find(p=>p.id===button.dataset.replacePhoto);if(photo?.recordId)beginCapture(photo.recordId,photo.slot,'file');return;}
     if (button.dataset.adopt) {
@@ -1189,7 +1202,7 @@ function handleWorkspaceClick(event) {
       const context = photo.recordId ? getContext(project, photo.recordId) : null;
       const prefix = `${project.name}_${context?.group?.name || (context ? '工事直下' : '未分類')}_${context?.target.name || ''}_${context?.record.category || ''}_${photo.slot || ''}_${photo.id.slice(0, 8)}`;
       if (button.dataset.original) download(originals.get(id), `${prefix}_元写真.${photo.originalPath.split('.').pop()}`);
-      else run(async () => { const blob = await composePhoto(originals.get(id), photo); download(blob, `${prefix}_${photo.applyBoard ? '黒板付き' : '画像'}.${blob.type === 'image/jpeg' ? 'jpg' : photo.originalPath.split('.').pop()}`); notify('画像のダウンロードを開始しました。'); });
+      else run(async () => { const blob = await composePhoto(originals.get(id), photo); download(blob, `${prefix}_${photo.applyBoard ? '黒板付き' : '画像'}.${blob.type === 'image/jpeg' ? 'jpg' : photo.originalPath.split('.').pop()}`); notify('画像をダウンロードしました。'); });
     }
   } catch (error) { notify(error.message, true); }
 }
@@ -1221,35 +1234,35 @@ $('editorDialog').addEventListener('close',()=>{modalEdited=false;if(editorRetur
 
 function renderOffline(state) {
   if($('offlineSummary'))$('offlineSummary').querySelector('.disclosure-label').textContent=`${state.ready?'圏外準備済み':'圏外未準備'} ・ ${state.online?'オンライン':'オフライン'}${state.updateAvailable||state.reloadRequired?' ・ 更新あり':''}`;
-  $('offlineStatus').textContent=`${state.ready?'圏外利用の準備完了':'圏外利用は未準備'}${state.currentVersion?` ／ アプリ${state.currentVersion}`:''}${state.online?' ／ 端末はオンライン表示':' ／ 端末はオフライン表示'}。${state.message||''}${state.error?` ${state.error}`:''}`;
+  $('offlineStatus').textContent=`${state.ready?'圏外利用の準備完了':'圏外利用は未準備'}${state.currentVersion?` ／ アプリ${state.currentVersion}`:''}${state.online?' ／ オンライン':' ／ オフライン'}。${state.message||''}${state.error?` ${state.error}`:''}`;
   $('prepareOffline').dataset.unavailable=String(!state.supported);
   $('checkUpdate').dataset.unavailable=String(!state.supported||!state.online);
   $('applyUpdate').hidden=!state.updateAvailable&&!state.reloadRequired;
-  $('applyUpdate').textContent=state.reloadRequired?'新しい版で再読込':'更新内容を確認して切替';
+  $('applyUpdate').textContent=state.reloadRequired?'新しい版で再読み込み':'更新を確認';
   updateDisabled();
 }
 function updateAppDialog() {
   const state=offlineManager.getState();
-  openDialog('アプリ更新と作業再開を確認',`<p>現在：${esc(state.currentVersion||'不明')}<br>新しい版：${esc(state.updateVersion||state.preparedVersion||'準備済みの版')}</p><p class="dialog-note">入力中の内容を一時保存してから、明示的にアプリを再読込します。工事・原本の一時保存は消去しません。必要な再編集用ZIPは先に保存してください。資材の準備に失敗した場合は旧版を保持して、通信復帰後に再試行できます。</p>${checkbox('作業を保存して、この画面を更新することを確認しました',{name:'confirmed',required:true})}`,async()=>{
-    if(pendingPhoto)throw new Error('未保存の写真があります。再試行または写真取込の取消をしてからアプリを更新してください。');
-    if(!project&&(initialProjectName||initialRouteName))throw new Error('入力中の工事名があります。工事を開始するか、工事名を空欄にしてからアプリを更新してください。');
+  openDialog('アプリの更新',`<p>現在：${esc(state.currentVersion||'不明')}<br>新しい版：${esc(state.updateVersion||state.preparedVersion||'準備済みの版')}</p><p class="dialog-note">入力内容を一時保存してから再読み込みします。工事と原本は消えません。念のため先に作業ZIPを保存してください。更新に失敗しても旧版のまま使え、通信復帰後に再試行できます。</p>${checkbox('一時保存して画面を更新することを確認しました',{name:'confirmed',required:true})}`,async()=>{
+    if(pendingPhoto)throw new Error('未保存の写真があります。再試行か取消をしてから更新してください。');
+    if(!project&&(initialProjectName||initialRouteName))throw new Error('入力中の工事名があります。工事を始めるか空欄にしてから更新してください。');
     if(project){
-      if(!storage)throw new Error('一時保存を利用できません。作業ZIPを保存してからアプリを更新してください。');
+      if(!storage)throw new Error('一時保存を使えません。作業ZIPを保存してから更新してください。');
       await sessionSaver.pause();await storage.saveSession(project.id,sessionSnapshot(project));sessionSaver.reset();
     }
     if(!state.reloadRequired)await offlineManager.applyUpdate();
     intentionalReload=true;window.location.reload();
-  },'一時保存して更新・再読込');
+  },'保存して更新');
 }
 $('prepareOffline').onclick=()=>run(()=>offlineManager.prepare());
 $('checkUpdate').onclick=()=>run(()=>offlineManager.checkForUpdate());
 $('applyUpdate').onclick=updateAppDialog;
-$('boardCatalog').onclick=()=>openDialog('黒板一覧',`<p class="hint">参照元と同じ5種類の板面です。撮影画面の黒板一覧から次の写真の形式を選べます。</p>${renderBoardChoices(null,{selectable:false})}`,async()=>{},'閉じる');
+$('boardCatalog').onclick=()=>openDialog('黒板一覧',`<p class="hint">5種類の黒板です。撮影画面で次の写真の形式を選べます。</p>${renderBoardChoices(null,{selectable:false})}`,async()=>{},'閉じる');
 document.addEventListener('click',event=>{
   const preview=event.target.closest('[data-preview-board]');
   if(preview&&!busy){
     const id=preview.dataset.previewBoard;
-    void previewViewer.showImage({title:BOARD_TEMPLATES[id].name,caption:'参照元と同じ黒板の板面です。入力値は含みません。',trigger:preview,loadBlob:async()=>{
+    void previewViewer.showImage({title:BOARD_TEMPLATES[id].name,caption:'黒板の見本です（入力値なし）。',trigger:preview,loadBlob:async()=>{
       await loadBoardImages();
       const canvas=document.createElement('canvas');canvas.width=1167;canvas.height=876;
       drawBoard(canvas.getContext('2d'),0,0,canvas.width,canvas.height,createBoard(id));
@@ -1271,7 +1284,7 @@ window.addEventListener('unhandledrejection', event => { notify(event.reason?.me
 async function start() {
   updateDisabled();
   if (!window.isSecureContext || !globalThis.crypto?.randomUUID) {
-    $('app').innerHTML = emptyState('HTTPSで開いてください','スマートフォンではHTTPSのURLが必要です。会社PCでの動作確認は、READMEにあるローカル起動手順を使ってください。');
+    $('app').innerHTML = emptyState('HTTPSで開いてください','スマートフォンではHTTPSのURLが必要です。PCではREADMEのローカル起動手順を使ってください。');
     return;
   }
   let resume=null;
@@ -1284,19 +1297,19 @@ async function start() {
       const restored = upgradeProject(saved.project);
       project = restored; originals = saved.originals; bundleId = saved.bundleId;
       dirty = true;
-      if(!saved.session)notify('このブラウザーの一時作業を再開しました。作業ZIPを保存してPCへ引き継げます。');
+      if(!saved.session)notify('前回の作業を再開しました。');
       if(saved.session){
         resume=restoreSession(saved.session);
-        notify(`このブラウザーの作業と表示状態を再開しました。${draftCounts()?`下書き${draftCounts()}件は編集中のまま復元しました。`:''}${mode==='output'?'帳票は再生成し、印刷前に内容を確認してください。':''}${resume.issues.length?' 一部の保存状態は復元できませんでした：'+resume.issues.join(' '):''}`,resume.issues.length>0);
+        notify(`前回の作業を再開しました。${draftCounts()?`下書き${draftCounts()}件も復元しました。`:''}${mode==='output'?'印刷前にプレビューを作り直してください。':''}${resume.issues.length?' 一部を復元できませんでした：'+resume.issues.join(' '):''}`,resume.issues.length>0);
       }
-      if(saved.sessionIssue)notify(`工事と写真は再開しました。画面・下書きの復元に問題があります：${saved.sessionIssue}`,true);
+      if(saved.sessionIssue)notify(`工事と写真を再開しました。画面・下書きは復元できませんでした：${saved.sessionIssue}`,true);
     }
   } catch (error) {
     storage = null; storageError = error.message;
-    feedback.setStorageWarning(`${storageError} カメラ撮影は停止しています。「写真から選ぶ」とZIPの確認・保存は利用できます。作業は再読み込みで失われるため、明示的にZIPへ保存してください。`);
+    feedback.setStorageWarning(`${storageError} カメラ撮影は使えません。「写真から選ぶ」とZIPは使えます。再読み込みで作業が消えるため、作業ZIPに保存してください。`);
   }
   offlineManager=createOfflineManager({onChange:renderOffline});
-  offlineManager.start().catch(error=>notify(`圏外準備状況を確認できません：${error.message}`,true));
+  offlineManager.start().catch(error=>notify(`圏外の準備状況を確認できません：${error.message}`,true));
   busy = false;
   render();
   if(resume){
