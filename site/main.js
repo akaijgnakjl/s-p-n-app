@@ -459,7 +459,7 @@ function showPastePreview(settings){
 
 function reportSectionDialog(recordId) {
   const {target,record}=getContext(project,recordId),section=record.reportSection||{};
-  openDialog('施工区間（この記録の任意設定）',`<p class="hint">${esc(target.name)} ／ ${esc(record.category)}。未設定でも写真・調書・ZIPを使用できます。</p><div class="dialog-fields">${checkbox('この調書に施工区間を記載する',{name:'enabled',checked:Boolean(record.reportSection)})}<div class="two-fields">${field('起点 m','start',section.start||'',{required:false})}${field('終点 m','end',section.end||'',{required:false})}</div>${field('不施工区間長 m（空欄は0）','excluded',section.excluded||'',{required:false})}${selectField('測点の表示',options(STATION_NOTATIONS,section.notation||'SP'),{name:'notation'})}${field('自由入力の測点名','custom',section.custom||'',{required:false,max:30})}<p id="sectionCalculation" class="hint"></p></div><p class="hint">数値はm、小数第3位まで。No.は100m区切り。KP=もmの数値へ接頭辞を付ける既存表記です。試験の計算・判定は行いません。</p>`,async data=>{
+  openDialog('施工区間（この記録の任意設定）',`<p class="hint">${esc(target.name)} ／ ${esc(record.category)}。未設定でも写真・調書・ZIPを使用できます。</p><div class="dialog-fields">${checkbox('この調書に施工区間を記載する',{name:'enabled',checked:record.reportSection!==null})}<div class="two-fields">${field('起点 m','start',section.start||'',{required:false})}${field('終点 m','end',section.end||'',{required:false})}</div>${field('不施工区間長 m（空欄は0）','excluded',section.excluded||'',{required:false})}${selectField('測点の表示',options(STATION_NOTATIONS,section.notation||'SP'),{name:'notation'})}${field('自由入力の測点名','custom',section.custom||'',{required:false,max:30})}<p id="sectionCalculation" class="hint"></p></div><p class="hint">数値はm、小数第3位まで。No.は100m区切り。KP=もmの数値へ接頭辞を付ける既存表記です。試験の計算・判定は行いません。</p>`,async data=>{
     const value=data.get('enabled')==='on'?{start:data.get('start').trim(),end:data.get('end').trim(),excluded:data.get('excluded').trim(),notation:data.get('notation'),custom:data.get('custom').trim()}:null;
     await mutate(next=>setReportSection(next,recordId,value),'任意の施工区間を保存しました。');
   });
@@ -470,7 +470,7 @@ function routeSectionDialog(groupId){
   const group=project.groups.find(g=>g.id===groupId);
   if(!group)throw new Error('施工区間を設定する路線を選んでください。');
   const s=group.reportSection||{};
-  openDialog('路線の施工区間',`<p>${esc(group.name)}の調書・写真帳で共通に使います。</p><div class="dialog-fields">${checkbox('施工区間を記載する',{name:'enabled',checked:Boolean(group.reportSection)})}${field('起点 m','start',s.start||'',{required:false})}${field('終点 m','end',s.end||'',{required:false})}${field('不施工区間長 m','excluded',s.excluded||'',{required:false})}${selectField('測点の表示',options(STATION_NOTATIONS,s.notation||'SP'),{name:'notation'})}${field('自由入力の測点名','custom',s.custom||'',{required:false,max:30})}<p id="sectionCalculation" class="hint"></p></div>`,data=>mutate(next=>setRouteSection(next,groupId,data.get('enabled')==='on'?{start:data.get('start').trim(),end:data.get('end').trim(),excluded:data.get('excluded').trim(),notation:data.get('notation'),custom:data.get('custom').trim()}:null),'路線の施工区間を保存しました。'));
+  openDialog('路線の施工区間',`<p>${esc(group.name)}の調書・写真帳で共通に使います。</p><div class="dialog-fields">${checkbox('施工区間を記載する',{name:'enabled',checked:group.reportSection!==null})}${field('起点 m','start',s.start||'',{required:false})}${field('終点 m','end',s.end||'',{required:false})}${field('不施工区間長 m','excluded',s.excluded||'',{required:false})}${selectField('測点の表示',options(STATION_NOTATIONS,s.notation||'SP'),{name:'notation'})}${field('自由入力の測点名','custom',s.custom||'',{required:false,max:30})}<p id="sectionCalculation" class="hint"></p></div>`,data=>mutate(next=>setRouteSection(next,groupId,data.get('enabled')==='on'?{start:data.get('start').trim(),end:data.get('end').trim(),excluded:data.get('excluded').trim(),notation:data.get('notation'),custom:data.get('custom').trim()}:null),'路線の施工区間を保存しました。'));
   $('editorForm').oninput=()=>{const f=$('editorForm'),r=constructionSection(f.elements.start.value,f.elements.end.value,f.elements.excluded.value);$('sectionCalculation').textContent=r.error||(r.complete?`工事延長 L = ${r.length} m`:'起点・終点を入力してください。');};
 }
 
@@ -1009,7 +1009,7 @@ $('app').addEventListener('input', event => {
     const discard=document.querySelector('[data-action="discard-reports"]');if(discard){discard.dataset.unavailable='false';discard.disabled=busy;}
     return;
   }
-  const form = event.target.closest('#boardForm');
+  const form = event.target.closest('#boardForm')||(event.target.form?.id==='boardForm'?event.target.form:null);
   if (!form) return;
   if(event.target.name==='autoNote')return;
   const {target,record}=getContext(project,activeRecordId);
@@ -1052,8 +1052,8 @@ $('app').addEventListener('change', event => {
   if(event.target.dataset.organizeFilter&&event.target.dataset.organizeFilter!=='query'){const key=event.target.dataset.organizeFilter;organizeState[key]=event.target.type==='checkbox'?event.target.checked:event.target.value;if(key==='groupId')activeGroupId=event.target.value;if(key==='useCase'){organizeState.category='';organizeState.slot='';}organizeState.selectedIds.clear();render();return;}
   if(event.target.dataset.selectPhoto){if(event.target.checked)organizeState.selectedIds.add(event.target.dataset.selectPhoto);else organizeState.selectedIds.delete(event.target.dataset.selectPhoto);render();return;}
   if(event.target.id==='selectVisiblePhotos'){const ids=filterPhotos(project,organizeState).map(p=>p.id);ids.forEach(id=>event.target.checked?organizeState.selectedIds.add(id):organizeState.selectedIds.delete(id));render();return;}
-  if (event.target.closest('#boardForm') && ['templateId','applyBoard','autoNote'].includes(event.target.name)) {
-    const form = event.target.closest('#boardForm');
+  if ((event.target.closest('#boardForm')||event.target.form?.id==='boardForm') && ['templateId','applyBoard','autoNote'].includes(event.target.name)) {
+    const form = $('boardForm');
     const {target,record}=getContext(project,activeRecordId);
     const noteMode=event.target.name==='autoNote'?(event.target.checked?'auto':'manual'):(boardDrafts.get(activeRecordId)?.noteMode||recordNoteMode(target,record));
     boardDrafts.set(activeRecordId, {...resolveCaptureBoard(project,activeRecordId,activeCaptureSlot,{board:readBoard(form),noteMode}),applyBoard:form.elements.applyBoard.checked}); dirty = true;invalidateOutput(); render(); return;

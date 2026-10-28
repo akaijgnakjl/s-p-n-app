@@ -78,6 +78,12 @@ body:not(.has-project) footer { max-width:640px; padding-inline:0; text-align:le
 .board-preview .board-grid > div:first-child { width:100%; max-width:400px; }
 .board-canvas { display:block; width:100%; height:auto; }
 .board-caption { margin-top:var(--space-2); }
+.board-apply { margin:var(--space-2) 0 var(--space-3); padding:var(--space-2) var(--space-3); border:1px solid var(--brand-line); border-radius:var(--control-radius); background:var(--brand-soft); }
+.board-apply.is-off { border-color:var(--warning); background:var(--warning-soft); }
+.board-apply .hint { margin-top:var(--space-1); }
+.board-preview-frame { position:relative; }
+.board-preview-frame.is-off .board-canvas { opacity:.35; }
+.board-off-label { position:absolute; z-index:1; top:var(--space-2); left:var(--space-2); padding:2px var(--space-2); border-radius:var(--control-radius); background:var(--paper); color:var(--text); font-size:var(--font-caption); font-weight:700; pointer-events:none; }
 .board-editor { min-width:0; padding-bottom:var(--space-1); }
 .board-form { display:grid; gap:var(--space-3); }
 .photo-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:var(--space-4); margin-top:var(--space-4); }

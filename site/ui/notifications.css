@@ -55,12 +55,16 @@
 .ui-notification-announcer { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 @media(max-width:760px) {
+  /* スマホでは画面を覆わないよう、右下に小さく出す。長い文は通知内でスクロールする。 */
   .ui-notifications {
-    inset-inline: max(var(--space-3), env(safe-area-inset-left)) max(var(--space-3), env(safe-area-inset-right));
-    width: auto;
-    max-height: min(48dvh, var(--notifications-max-height, calc(100dvh - var(--notifications-top, 16px) - var(--notifications-bottom, 16px))));
+    inset-inline: auto max(var(--space-3), env(safe-area-inset-right));
+    width: min(280px, calc(100vw - var(--space-6)));
+    max-height: min(36dvh, var(--notifications-max-height, calc(100dvh - var(--notifications-top, 16px) - var(--notifications-bottom, 16px))));
   }
-  .ui-toast [data-notification-messages] { max-height: 24dvh; }
+  .ui-toast { grid-template-columns: minmax(0, 1fr) 32px; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2); }
+  .ui-toast p, .ui-notification-drafts p { font-size: 12px; line-height: 1.5; }
+  .ui-toast [data-notification-messages] { max-height: min(14dvh, 72px); }
+  .ui-toast .ui-notification-dismiss { width: 32px; min-width: 32px; height: 32px; min-height: 32px; font-size: 18px; }
   .ui-notification-progress { grid-template-columns: minmax(0, 1fr); }
   .ui-notification-progress button { justify-self: start; }
   .ui-save-status { height: 44px; }

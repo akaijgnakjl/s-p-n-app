@@ -49,11 +49,14 @@ export function printControlPointReport(page){
   body+=line(155.97,116.4,155.97,796.56);
   for(const x of [254.67,353.37,452.07])body+=line(x,237.54,x,796.56);
   for(const y of [156.33,196.71,277.47,...Array.from({length:9},(_,index)=>329.43+51.96*index)])body+=line(57.72,y,550.26,y);
-  for(const [label,baseline] of [['項目名',141.18],['施工箇所',181.56],['施工区間',221.94]])body+=text(107.028,baseline,label);
+  const section=sectionValues(page.sectionData);
+  // 不施工がある時は施工区間の枠を上下2段にし、下段の中央へ不施工区間長、右端へL=を置く。
+  const split=Boolean(section?.excluded),sectionY=split?211.1:221.94,sectionSize=split?12:13.98;
+  for(const [label,baseline] of [['項目名',141.18],['施工箇所',181.56]])body+=text(107.028,baseline,label);
+  body+=text(107.028,sectionY,'施工区間',sectionSize);
   body+=centeredLines(353.65,141.18,controlPointLines(page.itemName,380));
   body+=centeredLines(353.65,181.56,controlPointLines(page.groupName,380));
-  const section=sectionValues(page.sectionData);
-  if(section){body+=text(245.158,221.94,section.prefix)+text(318.697,221.94,section.start)+text(344.132,221.94,'～')+text(403.204,221.94,section.end)+text(499.7,221.94,`L=${section.length}`);if(section.excluded)body+=text(353.65,233.8,`不施工区間長 ${section.excluded} m`,7.5);}
+  if(section){body+=text(245.158,sectionY,section.prefix,sectionSize)+text(318.697,sectionY,section.start,sectionSize)+text(344.132,sectionY,'～',sectionSize)+text(403.204,sectionY,section.end,sectionSize)+text(499.7,split?231:sectionY,`L=${section.length}`,sectionSize);if(split)body+=line(155.97,216.65,550.26,216.65)+text(107.028,231,'不施工',12)+text(353.65,231,`${section.excluded} m`,12);}
   ['点名','X座標','Y座標','高さ H','点の種類'].forEach((label,index)=>body+=text(107.028+98.7*index,262.32,label));
   page.entries.filter(entry=>entry.kind==='row').forEach((entry,index)=>{body+=`<g data-record-id="${esc(entry.recordId)}">`+entry.cells.map((values,column)=>centeredLines(107.028+98.7*column,308.459+51.96*index,values)).join('')+'</g>';});
   return `<div class="control-point-sheet">${svg('基準点設置箇所の調書',body)}</div>`;
