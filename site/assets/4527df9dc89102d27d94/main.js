@@ -606,9 +606,9 @@ function drawRegistrationPreview(){
   const form=$('editorForm'),canvas=$('registrationBoardPreview');if(!form||!canvas)return;
   const useCase=form.elements.useCase.value,group=project.groups.find(group=>group.id===form.elements.groupId.value);
   try{
-    const candidate=createProject(project.name),route=addGroup(candidate,{kind:'路線',name:group?.name||'路線未設定'});
-    const name=form.elements.namedItem('name')?.value||`${form.elements.namedItem('prefix')?.value||USE_CASES[useCase].prefix||'対象'}1`;
-    const [target]=addTargets(candidate,{useCase,groupId:route.id,name,category:form.elements.category.value,templateId:form.elements.initialTemplate.value});
+    if(!group)throw new Error('路線を選択してください。');
+    const candidate=clone(project),count=Math.max(1,Math.min(2000,Number(form.elements.count.value)||1));
+    const [target]=addTargets(candidate,{useCase,groupId:group.id,count,name:form.elements.namedItem('name')?.value||'',prefix:form.elements.namedItem('prefix')?.value||'',category:form.elements.category.value,templateId:form.elements.initialTemplate.value});
     const board=resolveCaptureBoard(candidate,target.records[0].id,target.records[0].slots[0].name).board;
     const result=drawBoard(canvas.getContext('2d'),0,0,canvas.width,canvas.height,board);
     $('registrationBoardStatus').textContent=result.overflow?'文字が枠に収まりません。登録前に入力を確認してください。':`${BOARD_TEMPLATES[board.templateId].name} ／ 項目名：${getReportItemName(candidate,target.records[0].id)}`;
@@ -633,11 +633,11 @@ function addTargetsDialog() {
   let savedName = ''; let savedPrefix;let savedTemplate;
   $('editorForm').onchange = event => {
     const form = $('editorForm');
-    if (!['useCase','count','category'].includes(event.target.name)){drawRegistrationPreview();return;}
+    if (!['useCase','count','category','groupId'].includes(event.target.name)){drawRegistrationPreview();return;}
     const selectedGroup = form.elements.groupId.value;
     const count = Math.max(1,Math.min(2000,Number(form.elements.count.value)||1));
     const category = event.target.name === 'useCase' ? '' : form.elements.category.value;
-    const savedMaterial=event.target.name==='count'?form.elements.namedItem('material')?.value||'':'';
+    const savedMaterial=['count','groupId'].includes(event.target.name)?form.elements.namedItem('material')?.value||'':'';
     if (event.target.name === 'useCase'||event.target.name==='category') { savedName = ''; savedPrefix = undefined;savedTemplate=undefined; }
     else {
       if (form.elements.namedItem('name')) savedName = form.elements.name.value;
