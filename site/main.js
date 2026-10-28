@@ -9,13 +9,14 @@ import {exportPhotos} from './photo-export.js';
 import {readTSScreenshot} from './ts-screenshot.js';
 import {applyTSScreenshot} from './ts-screenshot-data.js';
 import {setRouteSection,describeTargetDeletion,deleteTargets} from './workflow.js';
+import {relinkBoardDrafts} from './board-link.js';
 import { openStorage } from './storage.js';
 import { exportWorkPackage, importWorkPackage, PACKAGE_LIMITS } from './package.js';
-import {renameProject,renameGroup,updateTarget,describePhotoMove,movePhoto,describePhotoDelete,deletePhoto,setReportField,describeReportPaste,applyReportPaste,setReportSection,reviewReport} from './workflow.js';
-import {reportReviewState,reportMissingFields,constructionSection,sectionLabel,STATION_NOTATIONS,getReportItemName,getReportItemNames,updateReportItemNames} from './report-data.js';
+import {renameProject,renameGroup,updateTarget,saveRecordBoard,savePhotoBoard,describePhotoMove,movePhoto,describePhotoDelete,deletePhoto,setReportField,describeReportPaste,applyReportPaste,setReportSection,reviewReport} from './workflow.js';
+import {reportReviewState,reportMissingFields,constructionSection,sectionLabel,STATION_NOTATIONS,getReportItemName,getReportItemNames,updateReportItemNames,visibleReportColumns} from './report-data.js';
 import {isTrial,recordNoteMode,resolveCaptureBoard} from './capture-board.js';
 import {renderReportView,renderOutputView,scopedRecords} from './ui-pc.js';
-import {buildOutputHTML} from './reports.js';
+import {buildOutputHTML,buildOutputModel} from './reports.js';
 import {dateState,workDateLabel,hasBoardDate,captureSourceLabel,setPhotoWorkDate,setNextWorkDate} from './dates.js';
 import {createOfflineManager} from './offline.js';
 import {createOrganizeState,filterPhotos,renderOrganizeView} from './ui-organize.js';
@@ -37,6 +38,7 @@ const $ = id => document.getElementById(id);
 const feedback=createNotifications();
 const floating=createFloatingDisclosures();
 const viewPosition=createViewPosition({root:$('app')});
+let navigationObserver=null;
 let renderedViewKey='';
 const viewKey=()=>[project?.id||'',mode,activeGroupId,activeTargetId,activeRecordId,reportUseCase].join(':');
 const esc = escapeHTML;
@@ -113,7 +115,7 @@ function sessionSnapshot(next=project,{fresh=false,zipDirty=dirty,clearNames=[],
   const targets=new Map(next.targets.map(t=>[t.id,t])),records=new Map(next.targets.flatMap(t=>t.records.map(r=>[r.id,r])));
   const names=[...nameDrafts].filter(([id])=>targets.has(id)&&!clearNames.includes(id));
   const reports=clearReports?[]:[...reportDrafts].filter(([key])=>records.has(key.slice(0,key.indexOf(':')))&&!clearReportKeys.includes(key));
-  const boards=clearBoards?[]:[...boardDrafts].filter(([id])=>records.has(id)&&!clearBoardIds.includes(id));
+  const boards=relinkBoardDrafts(project,next,clearBoards?[]:[...boardDrafts].filter(([id])=>records.has(id)&&!clearBoardIds.includes(id)));
   const raw={view:{mode,activeGroupId,activeTargetId,activeRecordId,useCaseFilter,onlyMissing,reportUseCase,activeCaptureSlot,
     organize:organizeState,disclosures:[...disclosureState],drawerPhotoId:next.photos.some(p=>p.id===drawerPhotoId)?drawerPhotoId:'',
     scroll:{x:window.scrollX,y:window.scrollY,target:$('targetPicker')?.scrollTop||0,targetList:document.querySelector('#targetPicker .target-list')?.scrollTop||0,drawer:$('photoDrawerBody')?.scrollTop||0},
@@ -214,7 +216,9 @@ async function mutate(change, message, sessionOptions={}) {
   const next = clone(project);
   const result = change(next);
   next.updatedAt = new Date().toISOString();
+  const drafts=relinkBoardDrafts(project,next,[...boardDrafts]);
   await persist(next, originals, false, null, sessionOptions);
+  boardDrafts.clear();for(const entry of drafts)boardDrafts.set(...entry);
   project = next; dirty = true; invalidateOutput();
   if (message) notify(message);
   return result;
@@ -297,7 +301,7 @@ function boardFields(board, applyBoard = true, choices = true, {omitPoint=false,
   const template = BOARD_TEMPLATES[board.templateId];
   const fields=template.fields.filter(item=>!omitPoint||item.key!=='point');
   const visibleKeys = new Set(fields.map(item => item.key));
-  return `${choices?renderBoardChoices(board.templateId):''}${selectField('黒板の形式',optionItems(Object.values(BOARD_TEMPLATES).filter(item=>item.id!=='legacy-simple'||board.templateId===item.id).map(item=>[item.id,item.name]),board.templateId),{name:'templateId'})}${fields.map(item => field(item.label, `board-${item.key}`, board.values[item.key], {type:item.type || 'text',max:1000,required:applyBoard && !item.optional,multiline:!!item.large,attrs:{readonly:fixedTS&&['workType','remarks'].includes(item.key)}})).join('')}${BOARD_FIELD_KEYS.filter(key => !visibleKeys.has(key)).map(key => `<input type="hidden" name="board-${key}" value="${esc(omitPoint&&key==='point'?'':board.values[key])}">`).join('')}${board.legacyColor?`<input type="hidden" name="legacyColor" value="${esc(board.legacyColor)}">`:''}`;
+  return `${choices?renderBoardChoices(board.templateId):''}${selectField('黒板の形式',optionItems(Object.values(BOARD_TEMPLATES).filter(item=>item.id!=='legacy-simple'||board.templateId===item.id).map(item=>[item.id,item.name]),board.templateId),{name:'templateId'})}${fields.map(item => field(item.label, `board-${item.key}`, board.values[item.key], {type:item.type || 'text',max:1000,required:applyBoard && !item.optional,multiline:!!item.large,attrs:{readonly:(['job','route'].includes(item.key))||fixedTS&&['workType','remarks'].includes(item.key)}})).join('')}${BOARD_FIELD_KEYS.filter(key => !visibleKeys.has(key)).map(key => `<input type="hidden" name="board-${key}" value="${esc(omitPoint&&key==='point'?'':board.values[key])}">`).join('')}${board.legacyColor?`<input type="hidden" name="legacyColor" value="${esc(board.legacyColor)}">`:''}`;
 }
 
 function readBoard(form) {
@@ -332,7 +336,7 @@ async function flushBoardDrafts(persistLocally = true) {
   for (const [recordId, draft] of boardDrafts) {
     if (draft.applyBoard) boardFits(draft.board,{skipPoint:isTrial(getContext(project,recordId).target.useCase)});
     const { record } = getContext(next, recordId);
-    record.boardDefaults = clone(draft.board); record.applyBoardDefault = draft.applyBoard; record.boardNoteMode=draft.noteMode||'manual';
+    saveRecordBoard(next,recordId,clone(draft.board),{applyBoard:draft.applyBoard,noteMode:draft.noteMode||'manual'});
   }
   next.updatedAt = new Date().toISOString();
   validateSnapshot(next);
@@ -378,18 +382,18 @@ function newGroupDialog() {
 }
 
 function renameProjectDialog() {
-  openDialog('工事名を訂正',`<div class="dialog-fields">${field('工事名','name',project.name,{max:100})}</div><p class="hint">工事ID・原本・所属は保持します。既存写真の黒板は変わりません。調書は要再確認になります。</p>`,data=>mutate(next=>renameProject(next,data.get('name')),'工事名を訂正しました。既存写真の黒板は保持しています。'));
+  openDialog('工事名を訂正',`<div class="dialog-fields">${field('工事名','name',project.name,{max:100})}</div><p class="hint">工事ID・原本・所属は保持します。採用写真と次回用の黒板の工事名も更新します。元写真は保持し、黒板の訂正履歴を残します。調書は要再確認になります。</p>`,data=>mutate(next=>renameProject(next,data.get('name')),'工事名と採用写真・次回用黒板を更新しました。'));
 }
 
 function renameGroupDialog(id) {
   const group=project.groups.find(g=>g.id===id);
-  openDialog('路線名を訂正',`<p class="hint">${esc(group.kind)}</p><div class="dialog-fields">${field('路線名','name',group.name)}</div><p class="hint">所属ID・原本・既存写真の黒板は保持します。</p>`,data=>mutate(next=>renameGroup(next,id,data.get('name')),'路線名を訂正しました。'));
+  openDialog('路線名を訂正',`<p class="hint">${esc(group.kind)}</p><div class="dialog-fields">${field('路線名','name',group.name)}</div><p class="hint">所属ID・原本は保持し、採用写真と次回用の黒板の路線名も更新します。</p>`,data=>mutate(next=>renameGroup(next,id,data.get('name')),'路線名を訂正しました。'));
 }
 
 function editTargetDialog(id) {
   const target=project.targets.find(t=>t.id===id),def=USE_CASES[target.useCase];
-  openDialog('管理名・所属を訂正',`<p class="hint">用途：${esc(target.useCase)}（用途はこの操作で変更しません）</p><div class="dialog-fields">${field(def.nameLabel,'name',target.name)}${selectField('路線名',groupOptions(target.groupId||''),{name:'groupId',attrs:{required:true}})}</div><p class="dialog-note">記録・写真・原本のIDと、既存写真の黒板を保持します。所属を変えた後も、黒板の場所や点名は写真ごとに確認してください。</p>`,async data=>{
-    await mutate(next=>updateTarget(next,id,{name:data.get('name'),groupId:data.get('groupId')||null}),'管理名・所属を訂正しました。黒板は自動変更していません。');
+  openDialog('管理名・所属を訂正',`<p class="hint">用途：${esc(target.useCase)}（用途はこの操作で変更しません）</p><div class="dialog-fields">${field(def.nameLabel,'name',target.name)}${selectField('路線名',groupOptions(target.groupId||''),{name:'groupId',attrs:{required:true}})}</div><p class="dialog-note">記録・写真・原本のIDを保持し、調書の所属と採用写真・次回用黒板の路線名・点名を更新します。</p>`,async data=>{
+    await mutate(next=>updateTarget(next,id,{name:data.get('name'),groupId:data.get('groupId')||null}),'管理名・所属を調書と採用写真・次回用黒板へ反映しました。');
     activeGroupId='__all__';activeTargetId=id;
   });
 }
@@ -497,6 +501,7 @@ async function prepareOutput(){
   requireSavedNames();
   requireResolvedPaste();
   await flushBoardDrafts(true);await flushReportDrafts(true);
+  if(outputState.edition==='final'&&buildOutputModel(project,{recordIds:selectedOutputIds(),edition:'draft'}).issues.length){outputState.edition='draft';notify('不足・未確認があるため、途中版のプレビューへ切り替えました。');}
   showProgress('調書・採用写真の参照と原本を確認しています…');
   invalidateOutput();
   const result=await cancellable(signal=>buildOutputHTML(project,originals,{recordIds:selectedOutputIds(),edition:outputState.edition,onProgress:showProgress,signal,format:'blob'}));
@@ -594,7 +599,20 @@ function targetRegistrationFields(useCase,groupId='',count=1,name='',category=''
   if(trial){let index=2;const names=new Set(project.targets.filter(t=>t.groupId===(groupId||null)).map(t=>t.name));while(names.has(suggested))suggested=`${current}${index++}`;}
   const names=count===1?(trial?textField(definition.nameLabel,{name:'name',value:suggested,attrs:{readonly:true}}):field(definition.nameLabel,'name',name||suggested)):field('管理名の先頭部分','prefix',trial?current:(prefix??definition.prefix),{max:30,required:false});
   const materials=trial?selectField('材料',optionItems([['','材料を選択してください'],...materialChoices(useCase,current)],material),{name:'material',attrs:{required:true}}):'';
-  return `${selectField('路線名',groupOptions(groupId),{name:'groupId',attrs:{required:true}})}${selectField(definition.categoryLabel,options(definition.categories,current),{name:'category'})}${textField('追加する数',{name:'count',type:'number',value:count,max:null,attrs:{min:1,max:2000,step:1}})}${names}${materials}${useCase==='MMS'?'<input type="hidden" name="initialTemplate" value=""><p class="hint">MMSは黒板なしです。</p>':selectField('今回登録する対象の黒板初期値',optionItems(Object.values(BOARD_TEMPLATES).filter(t=>t.id!=='legacy-simple').map(t=>[t.id,t.name]),initialTemplate||definition.defaultBoardTemplate),{name:'initialTemplate'})}<p class="hint">入力した路線に対象を追加します。TSの右側画像はPCから指定します。</p>`;
+  return `${selectField('路線名',groupOptions(groupId),{name:'groupId',attrs:{required:true}})}${selectField(definition.categoryLabel,options(definition.categories,current),{name:'category'})}${textField('追加する数',{name:'count',type:'number',value:count,max:null,attrs:{min:1,max:2000,step:1}})}${names}${materials}${useCase==='MMS'?'<input type="hidden" name="initialTemplate" value=""><p class="hint">MMSは黒板なしです。</p>':selectField('今回登録する対象の黒板初期値',optionItems(Object.values(BOARD_TEMPLATES).filter(t=>t.id!=='legacy-simple').map(t=>[t.id,t.name]),initialTemplate||definition.defaultBoardTemplate),{name:'initialTemplate'})}${useCase!=='MMS'?'<section class="registration-board-preview"><strong>登録する黒板のプレビュー</strong><canvas id="registrationBoardPreview" width="600" height="450" class="board-canvas" aria-label="登録する黒板のプレビュー"></canvas><p id="registrationBoardStatus" class="hint"></p></section>':''}<p class="hint">入力した路線に対象を追加します。TSの右側画像はPCから指定します。</p>`;
+}
+
+function drawRegistrationPreview(){
+  const form=$('editorForm'),canvas=$('registrationBoardPreview');if(!form||!canvas)return;
+  const useCase=form.elements.useCase.value,group=project.groups.find(group=>group.id===form.elements.groupId.value);
+  try{
+    const candidate=createProject(project.name),route=addGroup(candidate,{kind:'路線',name:group?.name||'路線未設定'});
+    const name=form.elements.namedItem('name')?.value||`${form.elements.namedItem('prefix')?.value||USE_CASES[useCase].prefix||'対象'}1`;
+    const [target]=addTargets(candidate,{useCase,groupId:route.id,name,category:form.elements.category.value,templateId:form.elements.initialTemplate.value});
+    const board=resolveCaptureBoard(candidate,target.records[0].id,target.records[0].slots[0].name).board;
+    const result=drawBoard(canvas.getContext('2d'),0,0,canvas.width,canvas.height,board);
+    $('registrationBoardStatus').textContent=result.overflow?'文字が枠に収まりません。登録前に入力を確認してください。':`${BOARD_TEMPLATES[board.templateId].name} ／ 項目名：${getReportItemName(candidate,target.records[0].id)}`;
+  }catch(error){$('registrationBoardStatus').textContent=error.message;}
 }
 
 function addTargetsDialog() {
@@ -615,7 +633,7 @@ function addTargetsDialog() {
   let savedName = ''; let savedPrefix;let savedTemplate;
   $('editorForm').onchange = event => {
     const form = $('editorForm');
-    if (!['useCase','count','category'].includes(event.target.name)) return;
+    if (!['useCase','count','category'].includes(event.target.name)){drawRegistrationPreview();return;}
     const selectedGroup = form.elements.groupId.value;
     const count = Math.max(1,Math.min(2000,Number(form.elements.count.value)||1));
     const category = event.target.name === 'useCase' ? '' : form.elements.category.value;
@@ -627,7 +645,10 @@ function addTargetsDialog() {
       savedTemplate=form.elements.initialTemplate.value;
     }
     $('targetRegistration').innerHTML = targetRegistrationFields(form.elements.useCase.value, selectedGroup, count, savedName, category, savedPrefix,savedTemplate,savedMaterial);
+    drawRegistrationPreview();
   };
+  $('editorForm').oninput=()=>drawRegistrationPreview();
+  drawRegistrationPreview();
 }
 
 function addRecordDialog() {
@@ -675,10 +696,10 @@ function editPhotoDialog(id) {
   const photo = project.photos.find(item => item.id === id);
   const context = getContext(project, photo.recordId);
   if (context.target.useCase === 'MMS'||(context.target.useCase==='TS出来形(バリアフリー)'&&photo.slot==='スマホスクリーンショット')) return;
-  openDialog('この写真の黒板を修正', `<p class="hint">${esc(context.target.name)} ／ ${esc(context.record.category)} ／ ${esc(photo.slot)}</p><div class="dialog-fields"><div id="photoBoardEditor" class="board-form">${boardFields(photo.board || context.record.boardDefaults,photo.applyBoard,true,{omitPoint:isTrial(context.target.useCase)})}</div>${checkbox('電子黒板を合成する',{name:'applyBoard',checked:photo.applyBoard})}</div><p class="hint">この写真だけに反映します。実物の黒板が写っている場合は合成を外せます。原本は変更しません。</p>`, async data => {
+  openDialog('この写真の黒板を修正', `<p class="hint">${esc(context.target.name)} ／ ${esc(context.record.category)} ／ ${esc(photo.slot)}</p><div class="dialog-fields"><div id="photoBoardEditor" class="board-form">${boardFields(photo.board || context.record.boardDefaults,photo.applyBoard,true,{omitPoint:isTrial(context.target.useCase)})}</div>${checkbox('電子黒板を合成する',{name:'applyBoard',checked:photo.applyBoard})}</div><p class="hint">この写真の黒板を更新し、位置→測点、備考→調書の備考を反映します。原本と変更前の黒板は保持します。</p>`, async data => {
     const board = readBoard($('editorForm')); const applyBoard = data.get('applyBoard') === 'on';
     if (applyBoard) boardFits(board,{skipPoint:isTrial(context.target.useCase)});
-    await mutate(next => { const item = next.photos.find(p => p.id === id); item.boardNoteMode=item.board?.values.note===board.values.note?(item.boardNoteMode||'manual'):'manual';item.board = board; item.applyBoard = applyBoard; }, '写真の黒板を保存しました。作業日は変更していません。');
+    await mutate(next => { savePhotoBoard(next,id,board,applyBoard); }, '写真の黒板と対応する調書欄を保存しました。作業日は変更していません。');
   });
   $('editorForm').onchange = event => { if (['templateId','applyBoard'].includes(event.target.name)) $('photoBoardEditor').innerHTML = boardFields(readBoard($('editorForm')),$('editorForm').elements.applyBoard.checked,true,{omitPoint:isTrial(context.target.useCase)}); };
 }
@@ -723,16 +744,16 @@ function beginCapture(recordId, slotName, source) {
   if(project.photos.length>=LIMITS.photos||project.photos.reduce((sum,photo)=>sum+photo.size,0)>=LIMITS.totalBytes){notify(`工事全体の上限（履歴込み${LIMITS.photos}枚・${formatByteLimit()}）に達しています。新しい撮影・写真選択は開始していません。必要な原本とZIPを保管してから整理してください。`,true);return;}
   if (source === 'camera' && !storage) { notify('現場でのカメラ撮影には一時保存が必要です。通常モードのブラウザーで開き直してください。「写真から選ぶ」はメモリ上で取り込めます。', true); return; }
   const context = getContext(project, recordId);
-  const form = $('boardForm');
+  const form = recordId===activeRecordId?$('boardForm'):null;
   if(!context.group){notify('撮影・写真選択の前に「管理名・所属を訂正」で路線名を設定してください。',true);return;}
-  const draft=boardDrafts.get(recordId)||boardDraft(context.record);
-  const resolved=resolveCaptureBoard(project,recordId,slotName,{board:recordId===activeRecordId&&form?readBoard(form):context.record.boardDefaults,noteMode:draft.noteMode});
+  const draft=boardDrafts.get(recordId)||{board:context.record.boardDefaults,applyBoard:context.record.applyBoardDefault!==false,noteMode:recordNoteMode(context.target,context.record)};
+  const resolved=resolveCaptureBoard(project,recordId,slotName,{board:recordId===activeRecordId&&form?readBoard(form):draft.board,noteMode:draft.noteMode});
   const screenshot=context.target.useCase==='TS出来形(バリアフリー)'&&slotName==='スマホスクリーンショット';
   const board=screenshot?null:resolved.board;
-  const applyBoard = !screenshot && context.target.useCase !== 'MMS' && Boolean(form?.elements.namedItem('applyBoard')?.checked ?? boardDraft(context.record).applyBoard);
+  const applyBoard = !screenshot && context.target.useCase !== 'MMS' && Boolean((recordId===activeRecordId?form?.elements.namedItem('applyBoard')?.checked:undefined) ?? draft.applyBoard);
   if (form && applyBoard && !form.checkValidity()) {form.closest('details').open=true;form.reportValidity();notify('黒板の未入力項目を確認してください。',true);return;}
   if (board && applyBoard) boardFits(board,{skipPoint:isTrial(context.target.useCase)});
-  activeCaptureSlot=screenshot?context.record.slots[0].name:slotName;
+  activeTargetId=context.target.id;activeRecordId=recordId;activeCaptureSlot=screenshot?context.record.slots[0].name:slotName;
   if(board){boardDrafts.set(recordId,{board,applyBoard,noteMode:resolved.noteMode});if(form){form.elements.namedItem('board-note').value=board.values.note;const caption=$('captureBoardSlot');if(caption)caption.textContent=`対象写真：${slotName}`;drawPreview();}}
   const defaults=context.record.workDateDefault;
   const workDate=defaults?.value || dateToday();
@@ -786,7 +807,8 @@ async function retryPendingPhoto(){
 function emptyView(){return renderInitialView({name:initialProjectName,routeName:initialRouteName,maxPhotos:LIMITS.photos,limitLabel:formatBytes(LIMITS.totalBytes)});}
 function projectHeader(){
   const groups=[['__all__','全路線'],...(project.targets.some(t=>!t.groupId)?[['','路線未設定（旧データ）']]:[]),...project.groups.map(g=>[g.id,g.name])].map(([id,label])=>({id,label,count:project.targets.filter(t=>id==='__all__'||t.groupId===(id||null)).length}));
-  return renderProjectHeader({name:project.name,storageAvailable:Boolean(storage),zipDirty:dirty,mode,groups,activeGroupId});
+  const models=project.targets.filter(t=>activeGroupId==='__all__'||t.groupId===(activeGroupId||null)).map(t=>{const slots=t.records.flatMap(r=>r.slots);return {id:t.id,useCase:t.useCase,taken:slots.filter(s=>s.status==='taken').length,required:slots.filter(s=>s.status!=='unnecessary').length,complete:slots.length>0&&slots.every(s=>['taken','unnecessary'].includes(s.status))};});
+  return renderProjectHeader({name:project.name,storageAvailable:Boolean(storage),zipDirty:dirty,mode,groups,activeGroupId,progressHTML:mode==='field'?renderTargetTabs(models,activeTargetId):''});
 }
 function captureView({group,target,record,visible}){
   const summary=activeGroupId==='__all__'?summarize(project):summarize(project,activeGroupId||null);
@@ -801,7 +823,7 @@ function captureView({group,target,record,visible}){
     if(target.useCase==='MMS')board='<section class="panel"><p class="hint">MMSは作業の前・後の写真を原本のまま記録します。黒板・座標・施工区間・調書入力は不要です。</p></section>';
     else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false,{omitPoint:isTrial(target.useCase),fixedTS:target.useCase==='TS出来形(バリアフリー)'}),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id)});}
   }else selected=emptyState('記録対象を追加','路線を設定し、用途と管理名を指定して始めます。施工区間は任意です。',{actions:button('記録対象を追加',{variant:'primary',attrs:{'data-action':'add-targets'}})});
-  return `${renderTargetTabs(allTargetModels,target?.id)}${renderCaptureProgress(summary)}<div class="capture-layout">${picker}<div class="capture-main">${selected}${board}</div></div>${record?historyPanel(record.id):''}`;
+  return `${renderCaptureProgress(summary)}<div class="capture-layout">${picker}<div class="capture-main">${selected}${board}</div></div>${record?historyPanel(record.id):''}`;
 }
 function slotHTML(record,slot){
   const photo=getSlotState(project,record.id,slot.name).photo,def=USE_CASES[getContext(project,record.id).target.useCase];
@@ -871,7 +893,8 @@ function render() {
     if(mode==='output'&&!outputState.initialized)resetOutputSelection();
     if(mode==='report'){const uses=[...new Set(scopedRecords(project,activeGroupId).map(c=>c.target.useCase))];if(!uses.includes(reportUseCase)&&uses.length)reportUseCase=uses[0];}
     const view=mode==='field'?captureView(selected):mode==='organize'?organizeView():mode==='report'?renderReportView(project,{groupId:activeGroupId,useCase:reportUseCase,drafts:reportDrafts}):mode==='output'?renderOutputView(project,outputState):handoffView();
-    $('app').innerHTML = projectHeader()+capacityPanel()+view;
+    $('app').innerHTML = projectHeader()+view+capacityPanel();
+    if(typeof ResizeObserver==='function'){navigationObserver?.disconnect();const nav=document.querySelector('.workspace-sticky-nav');if(nav){navigationObserver=new ResizeObserver(()=>document.documentElement.style.setProperty('--workspace-nav-height',`${nav.getBoundingClientRect().height}px`));navigationObserver.observe(nav);}}
 
     drawPreview();
     attachOutputPreview();
@@ -940,9 +963,9 @@ function renderPhotoDrawer() {
   const assignment=detailSection('所属・写真の種類',`<p class="hint">${esc(context?contextText({...context,slot:{name:photo.slot}}):'分類待ち')}</p>${context?button('この記録の撮影・確認へ',{attrs:{'data-go-record':photo.recordId}}):''}`,{actionHTML:button('訂正',{attrs:{'data-move-photo':photo.id}})});
   const boardSection=(photo.board||context&&context.target.useCase!=='MMS')&&!(context?.target.useCase==='TS出来形(バリアフリー)'&&photo.slot==='スマホスクリーンショット')?disclosure(`この写真の黒板・合成 ${photo.applyBoard?'あり':'なし'}`,(photo.board?button('<canvas id="detailBoard" width="600" class="board-canvas" aria-label="保存された黒板"></canvas>',{html:true,className:'preview-trigger',attrs:{'data-preview-canvas':'detailBoard','aria-label':'保存された黒板を拡大'}}):'<p class="hint">この写真には黒板データがありません。必要ならこの写真だけに追加できます。</p>')+`<p class="details-text">${esc(boardDescription(photo.board)).replaceAll('\n','<br>')}</p>`+(context?.target.useCase!=='MMS'?actions(button('この写真の黒板を修正',{attrs:{'data-edit-photo':photo.id}})+button('合成画像を拡大',{attrs:{'data-preview-composed':photo.id}})+button('合成画像を保存',{attrs:{'data-composed':photo.id}})):''),{className:'detail-section',saveKey:'drawer-board'}):'';
   const history=disclosure(`同じ撮影枠の写真履歴 ${related.length}枚`,photoTimeline(related.map(p=>({id:p.id,name:p.originalName,active:Boolean(context&&getSlotState(project,p.recordId,p.slot).photo?.id===p.id),current:p.id===photo.id,importedLabel:timestampLabel(p.importedAt),dateLabel:workDateLabel(p)})))+(context&&!active?button('表示中の写真を採用',{attrs:{'data-adopt':photo.id}}):''),{className:'detail-section',saveKey:'drawer-history'});
-  const original=disclosure('原本情報・保存・削除',metaList([['原本名',photo.originalName],['容量・寸法',`${bytesLabel(photo.size)}・${photo.width} × ${photo.height}px`],['写真ID',photo.id]])+actions(button('元写真を保存',{attrs:{'data-original':photo.id}})+button('この写真を削除',{variant:'danger',attrs:{'data-delete-photo':photo.id}}))+'<p class="hint">削除は影響確認後に実行します。再撮影や要撮り直しとは別の操作です。</p>',{className:'detail-section',saveKey:'drawer-original'});
+  const original=disclosure('原本情報・保存・削除',metaList([['原本名',photo.originalName],['容量・寸法',`${bytesLabel(photo.size)}・${photo.width} × ${photo.height}px`],['写真ID',photo.id]])+actions((context?button('写真を選び直す（旧写真は履歴に保持）',{attrs:{'data-replace-photo':photo.id}}):'')+button('元写真を保存',{attrs:{'data-original':photo.id}})+button('この写真を削除',{variant:'danger',attrs:{'data-delete-photo':photo.id}}))+'<p class="hint">削除は影響確認後に実行します。再撮影や要撮り直しとは別の操作です。</p>',{className:'detail-section',saveKey:'drawer-original'});
   const browse=mode==='organize'?filterPhotos(project,organizeState):project.photos.filter(p=>p.recordId===photo.recordId),at=browse.findIndex(p=>p.id===photo.id);
-  body.innerHTML=(at>=0?photoPagination({previousId:browse[at-1]?.id,nextId:browse[at+1]?.id,index:at,total:browse.length}):'')+detailHero({photoId:photo.id,title,subtitle,status:active?'採用中':context?'履歴':'分類待ち',tone:active?'success':'muted'})+dateSection+assignment+boardSection+history+original;
+  body.innerHTML=(at>=0?photoPagination({previousId:browse[at-1]?.id,nextId:browse[at+1]?.id,index:at,total:browse.length}):'')+detailHero({photoId:photo.id,title,subtitle,status:active?'採用中':context?'履歴':'分類待ち',tone:active?'success':'muted'})+dateSection+assignment+boardSection+(photo.boardRevisions?.length?disclosure(`黒板の訂正履歴 ${photo.boardRevisions.length}件`,photo.boardRevisions.map(revision=>`<p>${esc(timestampLabel(revision.changedAt))}</p><pre>${esc(boardDescription(revision.board))}</pre>`).join(''),{className:'detail-section',saveKey:'drawer-board-revisions'}):'')+history+original;
   if(drawerImagePhotoId!==photo.id){if(drawerImageURL)URL.revokeObjectURL(drawerImageURL);drawerImageURL=URL.createObjectURL(originals.get(photo.id));drawerImagePhotoId=photo.id;}
   $('detailOriginal').src=drawerImageURL;
   if(photo.board){const c=$('detailBoard');c.height=Math.round(c.width/boardAspectRatio(photo.board));drawBoard(c.getContext('2d'),0,0,c.width,c.height,photo.board);}
@@ -1008,7 +1031,7 @@ $('app').addEventListener('submit', event => {
   }
   if(event.target.dataset.inlineTarget){
     event.preventDefault();const id=event.target.dataset.inlineTarget,value=event.target.elements.name.value;
-    run(async()=>{const t=project.targets.find(t=>t.id===id);await mutate(next=>updateTarget(next,id,{name:value,groupId:t.groupId}),'管理名を保存しました。既存写真の黒板は保持しています。',{clearNames:[id]});finishNameEdit(id);});return;
+    run(async()=>{const t=project.targets.find(t=>t.id===id);await mutate(next=>updateTarget(next,id,{name:value,groupId:t.groupId}),'管理名を保存し、調書と採用写真・次回用黒板へ反映しました。',{clearNames:[id]});finishNameEdit(id);});return;
   }
   if (event.target.id !== 'boardForm') return;
   event.preventDefault();
@@ -1019,7 +1042,7 @@ $('app').addEventListener('submit', event => {
   const noteMode=boardDrafts.get(recordId)?.noteMode||recordNoteMode(target,record);
   run(async () => {
     if (applyBoard) boardFits(board,{skipPoint:isTrial(target.useCase)});
-    await mutate(next => { const { record } = getContext(next, recordId); record.boardDefaults = board; record.applyBoardDefault = applyBoard;record.boardNoteMode=noteMode; }, '次回撮影用の黒板を保存しました。過去写真は変更していません。',{clearBoardIds:[recordId]});
+    await mutate(next => { const { record } = getContext(next, recordId); saveRecordBoard(next,recordId,board,{applyBoard,noteMode}); }, '黒板と対応する調書欄・採用写真を更新しました。原本と訂正履歴は保持しています。',{clearBoardIds:[recordId]});
     boardDrafts.delete(recordId);
   });
 });
@@ -1050,7 +1073,7 @@ $('app').addEventListener('paste',event=>{
   if(!/[\t\r\n]/.test(text)&&text.length<=300)return;
   event.preventDefault();
   run(async()=>{
-    const rows=scopedRecords(project,activeGroupId,reportUseCase),keys=USE_CASES[reportUseCase].reportColumns.map(c=>c.key);
+    const rows=scopedRecords(project,activeGroupId,reportUseCase),keys=visibleReportColumns(reportUseCase).map(c=>c.key);
     const settings={recordIds:rows.map(c=>c.record.id),keys,startRow:Number(input.dataset.reportRow),startCol:Number(input.dataset.reportCol),text};
     try{showPastePreview(settings);}catch(error){pasteTextDialog(settings,text,error.message);}
   });
@@ -1067,7 +1090,7 @@ function handleWorkspaceClick(event) {
   const button = event.target.closest('button');
   const photoRow=event.target.closest('tr[data-open-photo]');
   if(!busy&&button?.dataset.previewPhoto){openImagePreview(button.dataset.previewPhoto,false,button);return;}
-  if(photoRow&&!event.target.closest('input,label.checkbox')&&!busy){openPhotoDrawer(photoRow.dataset.openPhoto);return;}
+  if(photoRow&&!button?.dataset.editPhoto&&!button?.dataset.replacePhoto&&!event.target.closest('input,label.checkbox')&&!busy){openPhotoDrawer(photoRow.dataset.openPhoto);return;}
   if (!button || busy) return;
   try {
     if(button.dataset.previewComposed){openImagePreview(button.dataset.previewComposed,true,button);return;}
@@ -1084,7 +1107,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.openPhoto){openPhotoDrawer(button.dataset.openPhoto);return;}
     if(button.dataset.groupScope!==undefined){activeGroupId=button.dataset.groupScope;activeTargetId='';activeRecordId='';organizeState.selectedIds.clear();render();return;}
     if(button.dataset.goRecord){const c=getContext(project,button.dataset.goRecord);closePhotoDrawer();activeGroupId='__all__';useCaseFilter='';onlyMissing=false;activeTargetId=c.target.id;activeRecordId=c.record.id;enterMode('field');return;}
-    if(button.dataset.goReport){const c=getContext(project,button.dataset.goReport);closePhotoDrawer();activeGroupId=c.target.groupId||'';reportUseCase=c.target.useCase;enterMode('report');return;}
+    if(button.dataset.goReport){const c=getContext(project,button.dataset.goReport);closePhotoDrawer();activeGroupId=c.target.groupId||'';reportUseCase=c.target.useCase;run(async()=>{await flushBoardDrafts(true);await flushReportDrafts(true);enterMode('report');});return;}
     if(button.dataset.startName){const t=project.targets.find(t=>t.id===button.dataset.startName);nameDrafts.set(t.id,t.name);render();document.querySelector(`[data-name-draft="${t.id}"]`)?.focus({preventScroll:true});return;}
     if(button.dataset.cancelName){finishNameEdit(button.dataset.cancelName);render();return;}
     if(button.id==='clearPhotoSelection'){organizeState.selectedIds.clear();render();return;}
@@ -1132,7 +1155,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.action==='prepare-output'){run(prepareOutput);return;}
     if(button.dataset.action==='print-output'){void openPrintOutput().catch(error=>notify(error.message,true));return;}
     if(button.dataset.action==='save-output-html'){requireSavedNames();if(outputState.prepared)download(outputState.prepared.blob,`${project.name}_${outputState.prepared.model.edition==='draft'?'途中版':'完成版'}_簡易調書写真帳.html`);return;}
-    if (button.dataset.mode) { enterMode(button.dataset.mode); return; }
+    if (button.dataset.mode) { run(async()=>{await flushBoardDrafts(true);await flushReportDrafts(true);enterMode(button.dataset.mode);}); return; }
     if (button.dataset.target) { mode='field';useCaseFilter='';onlyMissing=false;activeTargetId = button.dataset.target; activeRecordId = '';activeCaptureSlot='';render(); return; }
     if (button.dataset.record) { activeRecordId = button.dataset.record;activeCaptureSlot=''; render(); return; }
     if(button.dataset.previewSlot){activeCaptureSlot=button.dataset.previewSlot;render();openCanvasPreview('boardPreview',document.querySelector(`[data-preview-slot="${CSS.escape(activeCaptureSlot)}"]`));return;}
@@ -1140,6 +1163,7 @@ function handleWorkspaceClick(event) {
     if (button.dataset.unnecessary) { unnecessaryDialog(button.dataset.recordId, button.dataset.unnecessary); return; }
     if (button.dataset.retake) { run(() => mutate(next => setSlotStatus(next, button.dataset.recordId, button.dataset.retake, 'retake'), '撮り直し待ちにしました。原本と履歴は保持しています。')); return; }
     if (button.dataset.editPhoto) { editPhotoDialog(button.dataset.editPhoto); return; }
+    if(button.dataset.replacePhoto){const photo=project.photos.find(p=>p.id===button.dataset.replacePhoto);if(photo?.recordId)beginCapture(photo.recordId,photo.slot,'file');return;}
     if (button.dataset.adopt) {
       const photo = project.photos.find(item => item.id === button.dataset.adopt);
       run(() => mutate(next => setActivePhoto(next, photo.recordId, photo.slot, photo.id), 'この写真を採用しました。')); return;

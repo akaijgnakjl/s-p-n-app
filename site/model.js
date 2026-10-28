@@ -44,6 +44,10 @@ function findTarget(project, targetId) { const target = project.targets.find(ite
 export function getContext(project, recordId) { for (const target of project.targets) { const record = target.records.find(item => item.id === recordId); if (record) return { target, record, group: target.groupId === null ? null : project.groups.find(item => item.id === target.groupId) ?? null }; } fail('作業記録が見つかりません'); }
 function slotContext(project, recordId, slotName) { const context = getContext(project, recordId); const slot = context.record.slots.find(item => item.name === slotName); if (!slot) fail('この作業記録に指定した撮影枠はありません'); return { ...context, slot }; }
 function checkImageMetadata(photo) {
+  if(photo.boardRevisions!==undefined){
+    if(!Array.isArray(photo.boardRevisions))fail('黒板の訂正履歴が不正です');
+    for(const revision of photo.boardRevisions){if(!object(revision)||typeof revision.applyBoard!=='boolean')fail('黒板の訂正履歴が不正です');checkTimestamp(revision.changedAt,'黒板の訂正日時');if(revision.board!==null)validateBoard(revision.board);}
+  }
   if (photo.boardNoteMode !== undefined && !['auto', 'manual'].includes(photo.boardNoteMode)) fail('写真の黒板文言の設定が不正です');
   if (!own(TYPES, photo.type)) fail('写真はJPEG・PNG・WebPを指定してください'); text(photo.originalName, '元写真のファイル名', { max: 1000, required: true });
   if (!Number.isSafeInteger(photo.size) || photo.size <= 0 || photo.size > LIMITS.imageBytes) fail('写真は1枚20MiB以下にしてください');
@@ -144,7 +148,7 @@ export function upgradeProject(raw) {
   const result = { ...rest, schemaVersion: 2, appVersion: '0.2.0', groups, targets, photos }; validateProject(result); return result;
 }
 
-export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.8.1', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
+export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.9.0', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
 export function addGroup(project, { kind, name } = {}) {
   validateProject(project); if (!GROUP_KINDS.includes(kind)) fail('グループの種類を選択してください'); const value = inputName(name, 'グループ名'); if (project.groups.length >= LIMITS.groups) fail('グループは50以内にしてください'); if (project.groups.some(group => group.kind === kind && normalizedName(group.name.trim()) === normalizedName(value))) fail('同じ種類に同名のグループがあります');
   const group = { id: uid(), kind, name: value }; project.groups.push(group); project.updatedAt = now(); return group;

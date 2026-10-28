@@ -1,6 +1,6 @@
 import { USE_CASES, getContext, getSlotState, validateProject } from './model.js';
 import { OUTPUT_LIMITS } from './definitions.js';
-import { reportMissingFields, reportReviewState, sectionLabel, getReportItemName, effectiveReportSection,tsRowHeight,tsReportCells,tsCellLines } from './report-data.js';
+import { reportMissingFields, reportReviewState, sectionLabel, getReportItemName, effectiveReportSection,tsRowHeight,tsReportCells,tsCellLines,visibleReportColumns } from './report-data.js';
 import { workDateLabel } from './dates.js';
 import { validateImage as defaultValidateImage, composePhoto as defaultComposePhoto, preparePhoto as defaultPreparePhoto } from './images.js';
 import { escapeHTML } from './ui/components.js';
@@ -94,7 +94,7 @@ function reportPages(records) {
   }
   const pages = [];
   for (const rows of groups.values()) {
-    const first = rows[0], columns = USE_CASES[first.useCase].reportColumns;
+    const first = rows[0], columns = visibleReportColumns(first.useCase);
     let page, groupPage = 0;
     const newPage = (repeatContext = false) => {
       page = { kind: 'report', title: `${first.useCase}調書（簡易様式）`, useCase: first.useCase,
@@ -147,7 +147,7 @@ function reportPages(records) {
 function recordDetail(context) {
   const definition = USE_CASES[context.useCase];
   const paragraphs = [`${definition.nameLabel}：${context.targetName}`, `${definition.categoryLabel}：${context.category}`, context.groupLabel];
-  for (const column of definition.reportColumns) paragraphs.push(`${column.label}：${fieldValue(context.record, column.key) || '—（未入力）'}`);
+  for (const column of visibleReportColumns(context.useCase)) paragraphs.push(`${column.label}：${fieldValue(context.record, column.key) || '—（未入力）'}`);
   if (context.section) paragraphs.push(`施工区間：${context.section}`);
   const dated = context.slots.filter(slot => slot.photo);
   const dates = [...new Set(dated.map(slot => workDateLabel(slot.photo)))];

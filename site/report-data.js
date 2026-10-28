@@ -42,8 +42,15 @@ export function getReportItemNames(project, groupId = null) {
 }
 
 export function getReportItemName(project, recordId) {
-  const { target } = getReportContext(project, recordId);
+  const { target,record } = getReportContext(project, recordId);
+  const custom=project.reportSettings?.groups?.[target.groupId]?.[target.useCase]??project.reportSettings?.defaults?.[target.useCase];
+  if(custom)return custom;
+  if(target.useCase==='基準点')return record.category==='検測'?'基準点照査':'基準点設置';
   return getReportItemNames(project, target.groupId)[target.useCase];
+}
+
+export function visibleReportColumns(useCase){
+  return USE_CASES[useCase].reportColumns.filter(column=>!(['現密','コア密'].includes(useCase)&&column.key==='result'));
 }
 
 /** Atomic settings edit: an empty value removes only that scope's override. */
@@ -167,7 +174,7 @@ export function validateRecordReport(useCase, record) {
 
 export function reportMissingFields(project, recordId) {
   const { target, record } = getReportContext(project, recordId);
-  return USE_CASES[target.useCase].reportColumns.filter(column => !column.optional && column.key !== 'remarks' && !(target.useCase==='TS出来形(バリアフリー)'&&column.key==='side'&&tsEmbeddedSide(record.reportFields?.station)) && !String(record.reportFields?.[column.key] || '').trim()).map(column => column.label);
+  return visibleReportColumns(target.useCase).filter(column => !column.optional && column.key !== 'remarks' && !(target.useCase==='TS出来形(バリアフリー)'&&column.key==='side'&&tsEmbeddedSide(record.reportFields?.station)) && !String(record.reportFields?.[column.key] || '').trim()).map(column => column.label);
 }
 
 export function reportSignature(project, recordId) {

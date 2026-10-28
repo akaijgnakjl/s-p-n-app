@@ -1,5 +1,6 @@
 import { getContext, USE_CASES } from './model.js';
 import {tsCaptureBoard} from './ts-board.js';
+import {linkedBoard} from './board-link.js';
 
 export const isTrial = useCase => ['現密','コア密'].includes(useCase);
 export function automaticNote(useCase, category, slot = '') {
@@ -20,7 +21,7 @@ export function resolveCaptureBoard(project, recordId, slot, {board, noteMode} =
   const {target,record,group} = getContext(project,recordId);
   if (!USE_CASES[target.useCase].slots.includes(slot)) throw new Error('この用途にない撮影枠です。');
   if (target.useCase === 'MMS') return {board:null,noteMode:'manual'};
-  let result = structuredClone(board || record.boardDefaults);
+  let result = linkedBoard(project,recordId,board || record.boardDefaults,{report:!board,preservePoint:Boolean(board)});
   if(target.useCase==='TS出来形(バリアフリー)')result=tsCaptureBoard(result,{route:group?.kind==='路線'?group.name:'',station:record.reportFields.station||result.values.location||(/^SP\s*\d/i.test(target.name)?target.name:'')});
   if(isTrial(target.useCase))result.values.point='';
   const mode = noteMode || recordNoteMode(target,record);

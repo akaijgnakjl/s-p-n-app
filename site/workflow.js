@@ -1,5 +1,7 @@
 import { validateProject, getContext, USE_CASES } from './model.js';
 import { getReportContext, validateReportValue, validateReportSection, reportMissingFields, reportSignature, parseReportPaste } from './report-data.js';
+import {boardReportUpdates,linkedBoard,refreshRecordBoards,replacePhotoBoard} from './board-link.js';
+import {automaticNote,isTrial} from './capture-board.js';
 
 const fail = message => { throw new Error(message); };
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
@@ -22,7 +24,7 @@ function changeProject(project, change) {
 }
 
 export function renameProject(project, name) {
-  changeProject(project, next => { next.name = nameValue(name, '工事名', 100, true); });
+  changeProject(project, next => { next.name = nameValue(name, '工事名', 100, true);for(const target of next.targets)for(const record of target.records)refreshRecordBoards(next,record.id,{photos:true}); });
   return project;
 }
 
@@ -33,6 +35,7 @@ export function renameGroup(project, id, name) {
     const value = nameValue(name, 'グループ名', 300, true);
     if (next.groups.some(item => item.id !== id && item.kind === group.kind && keyName(item.name.trim()) === keyName(value))) fail('同じ種類に同名のグループがあります。');
     group.name = value;
+    for(const target of next.targets.filter(target=>target.groupId===id))for(const record of target.records)refreshRecordBoards(next,record.id,{photos:true});
     return group;
   });
 }
@@ -47,6 +50,7 @@ export function updateTarget(project, id, updates) {
     if (groupId !== null && !next.groups.some(item => item.id === groupId)) fail('移動先のグループが見つかりません。');
     if (next.targets.some(item => item.id !== id && item.groupId === groupId && keyName(item.name.trim()) === keyName(name.trim()))) fail('移動先のグループに同名の対象があります。');
     target.name = name; target.groupId = groupId;
+    for(const record of target.records)refreshRecordBoards(next,record.id,{photos:true});
     return target;
   });
 }
@@ -160,6 +164,7 @@ export function setReportField(project, recordId, key, value) {
     if (!USE_CASES[target.useCase].reportColumns.some(column => column.key === key)) fail('この用途にない調書の項目です。');
     validateReportValue(value);
     record.reportFields = { ...(record.reportFields || {}), [key]: value };
+    refreshRecordBoards(next,recordId,{photos:['station','remarks'].includes(key)});
     return record;
   });
 }
@@ -188,7 +193,45 @@ export function applyReportPaste(project, options) {
       const { record } = getReportContext(next, update.recordId);
       record.reportFields = { ...(record.reportFields || {}), [update.key]: update.value };
     }
+    for(const id of new Set(preview.updates.map(update=>update.recordId)))refreshRecordBoards(next,id,{photos:true});
     return preview;
+  });
+}
+
+function applyBoardPoint(project,target,board,previous){
+  if(!['基準点','仮BM'].includes(target.useCase)||!['sample-2111','sample-2115','legacy-simple'].includes(board.templateId)||board.values.point===previous?.values.point||!board.values.point.trim())return;
+  const name=nameValue(board.values.point,USE_CASES[target.useCase].nameLabel,300);
+  if(project.targets.some(item=>item.id!==target.id&&item.groupId===target.groupId&&keyName(item.name)===keyName(name)))fail('同じ路線に同名の対象があります。');
+  target.name=name;
+  for(const record of target.records)refreshRecordBoards(project,record.id,{photos:true});
+}
+
+export function saveRecordBoard(project,recordId,board,{applyBoard=true,noteMode='manual'}={}){
+  return changeProject(project,next=>{
+    const {target,record}=getContext(next,recordId),updates=boardReportUpdates(target.useCase,board,record.boardDefaults);
+    applyBoardPoint(next,target,board,record.boardDefaults);
+    for(const [key,value] of Object.entries(updates))validateReportValue(value);
+    record.reportFields={...record.reportFields,...updates};
+    record.boardDefaults=linkedBoard(next,recordId,board);record.applyBoardDefault=applyBoard;record.boardNoteMode=noteMode;
+    for(const slot of record.slots){
+      const photo=next.photos.find(photo=>photo.id===slot.activePhotoId);if(!photo||(target.useCase==='TS出来形(バリアフリー)'&&slot.name==='スマホスクリーンショット'))continue;
+      const values={...board.values,date:photo.board?.values.date??photo.workDate};
+      if(isTrial(target.useCase)&&noteMode==='auto')values.note=automaticNote(target.useCase,record.category,slot.name);
+      replacePhotoBoard(photo,linkedBoard(next,recordId,{...board,values}),applyBoard);
+    }
+    return record;
+  });
+}
+
+export function savePhotoBoard(project,photoId,board,applyBoard){
+  return changeProject(project,next=>{
+    const photo=next.photos.find(photo=>photo.id===photoId);if(!photo)fail('写真が見つかりません。');
+    const {target,record}=getContext(next,photo.recordId),updates=boardReportUpdates(target.useCase,board,photo.board);
+    applyBoardPoint(next,target,board,photo.board);
+    for(const [key,value] of Object.entries(updates))validateReportValue(value);
+    record.reportFields={...record.reportFields,...updates};
+    refreshRecordBoards(next,record.id,{photos:true});
+    replacePhotoBoard(photo,linkedBoard(next,record.id,board),applyBoard);photo.boardNoteMode='manual';return photo;
   });
 }
 

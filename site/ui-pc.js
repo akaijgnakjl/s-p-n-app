@@ -1,7 +1,7 @@
 import { USE_CASES } from './model.js';
 import { LIMITS, OUTPUT_LIMITS } from './definitions.js';
 import {formatBytes} from './limits.js';
-import { reportReviewState, reportMissingFields, sectionLabel, getReportItemName, effectiveReportSection } from './report-data.js';
+import { reportReviewState, reportMissingFields, sectionLabel, getReportItemName, effectiveReportSection,visibleReportColumns } from './report-data.js';
 import { buildOutputModel } from './reports.js';
 import { escapeHTML as esc, attrs, button, actions, textareaField, selectField, checkbox, disclosure, panelHeading, badge, notice, tabButton, tabBar, emptyState } from './ui/components.js';
 
@@ -15,9 +15,9 @@ const option = (value, label, selected) => `<option${attrs({ value, selected })}
 export function renderReportView(project, { groupId = '__all__', useCase = '基準点', drafts = new Map() } = {}) {
   const available=[...new Set(scopedRecords(project,groupId).map(c=>c.target.useCase))];
   if(available.length&&!available.includes(useCase))useCase=available[0];
-  const definition = USE_CASES[useCase], rows = scopedRecords(project, groupId, useCase), columns = definition.reportColumns;
+  const definition = USE_CASES[useCase], rows = scopedRecords(project, groupId, useCase), columns = visibleReportColumns(useCase);
   const visibleDraftCount = rows.reduce((count, { record }) => count + columns.filter(column => drafts.has(`${record.id}:${column.key}`)).length, 0);
-  const tabs = tabBar(available.map(name=>{const records=scopedRecords(project,groupId,name),complete=records.every(({record})=>reportReviewState(project,record.id)==='reviewed'&&!USE_CASES[name].reportColumns.some(column=>drafts.has(`${record.id}:${column.key}`)));return tabButton(`${name} ${complete?'入力完了':'未完了'}`,{selected:name===useCase,className:complete?'is-complete':'is-incomplete',attrs:{'data-report-use':name}});}).join(''),{className:'report-tabs',label:'調書の用途'});
+  const tabs = tabBar(available.map(name=>{const records=scopedRecords(project,groupId,name),complete=records.every(({record})=>reportReviewState(project,record.id)==='reviewed'&&!visibleReportColumns(name).some(column=>drafts.has(`${record.id}:${column.key}`)));return tabButton(`${name} ${complete?'入力完了':'未完了'}`,{selected:name===useCase,className:complete?'is-complete':'is-incomplete',attrs:{'data-report-use':name}});}).join(''),{className:'report-tabs',label:'調書の用途'});
   let heading = `<section class="panel">${panelHeading('調書入力（簡易様式）', { eyebrow: 'SIMPLE RECORD SHEET', className: 'section-heading', meta: '<span class="hint">撮影の完了とは別に確認します</span>', actions: button('帳票の項目名を設定', { attrs: { 'data-action': 'report-settings' } }), description: '入力は記録IDに保存します。Excelの範囲をセルへ貼り付けできます。各セル300文字まで。範囲や長さの超過は切り捨てません。' })}${tabs}`;
   if (!columns.length) return heading + emptyState('MMSには調書入力を要求しません', '前・後の写真を確認し、出力画面から写真帳を作成できます。施工区間も不要です。', { level: 3 }) + '</section>';
   if(useCase==='TS出来形(バリアフリー)')heading+='<div class="dialog-note"><strong>スクリーンショットから入力</strong><p>BACK（BUCK）の数値 → X、LEFT／RIGHT（LIGHT）の数値 → Y。画面下部の「68.29R」などを「測点又は区別」に入力します。末尾にL/Rがあれば、左右欄への重複入力は不要です。</p><p>数値はmで入力します（0.002m＝2mm）。見本のように設計値が0の記録では、スクリーンショットの数値を実測値へ入力します。スクリーンショット取込時に数値を自動入力します。読取後は画像と照合し、調書を入力確認済みにしてください。</p></div>';
@@ -42,7 +42,7 @@ export function renderReportView(project, { groupId = '__all__', useCase = '基�
     return `<tr><th scope="row">${esc(target.name)}<small>${esc(record.category)}<br>項目名：${esc(getReportItemName(project, record.id))}<br>${esc(group ? `${group.kind}：${group.name}` : '工事直下')}</small></th>${cells}<td>${badge(editing ? '編集中' : reviewLabels[state], { tone: state === 'reviewed' && !editing ? 'success' : 'warning' })}${missing.length ? `<p class="hint">未入力：${esc(missing.join('、'))}</p>` : ''}${recordControls}<p class="hint">${esc(sectionLabel(effectiveReportSection(project,record.id)) || '施工区間は未設定です。写真と調書の必須条件ではありません。')}</p></td></tr>`;
   }).join('');
   const routeSections=project.groups.filter(g=>groupId==='__all__'||g.id===groupId).map(g=>`<section class="route-section-panel"><strong>路線：${esc(g.name)}</strong><p>${esc(sectionLabel(g.reportSection)||'施工区間は未設定です。')}</p>${button('路線の施工区間を設定',{attrs:{'data-route-section':g.id}})}</section>`).join('');
-  return `${heading}${routeSections}${controls}<p id="reportEditStatus" class="hint" role="status">${drafts.size ? '未保存の編集があります。保存・入力確認・ZIP保存時に確定します。' : '保存済みの入力を表示しています。'}</p><div class="report-table-wrap"><table class="report-input-table"><thead><tr><th>対象・${esc(definition.categoryLabel)}</th>${columns.map(column => `<th>${esc(column.label)}</th>`).join('')}<th>確認・任意設定</th></tr></thead><tbody>${tableRows}</tbody></table></div><p class="hint ui-section-note">座標・高さ・測定値は簡易入力欄です。試験計算・合否判定は行いません。備考は任意です。</p></section>`;
+  return `${heading}${routeSections}${controls}<p id="reportEditStatus" class="hint" role="status">${drafts.size ? '未保存の編集があります。保存・入力確認・ZIP保存時に確定します。' : '保存済みの入力を表示しています。'}</p><div class="report-table-wrap"><table class="report-input-table"><thead><tr><th>対象・${esc(definition.categoryLabel)}</th>${columns.map(column => `<th>${esc(column.label)}</th>`).join('')}<th>確認・任意設定</th></tr></thead><tbody>${tableRows}</tbody></table></div><p class="hint ui-section-note">座標・高さは簡易入力欄です。試験計算・合否判定は行いません。備考は任意です。</p></section>`;
 }
 
 export function renderOutputView(project, { groupId = '__all__', useCase = '', selectedIds = new Set(), edition = 'draft', prepared = null, ready = false, approved = false } = {}) {
@@ -61,7 +61,7 @@ export function renderOutputView(project, { groupId = '__all__', useCase = '', s
     ? `<p class="hint">不足・未入力・再確認が${issues.length}件あります。内容の確認には途中版を使えます。</p>${disclosure(`確認事項の詳細：${issues.length}件`, `<ul>${issues.map(issue => `<li>${esc(issue.targetName)} ／ ${esc(issue.category)}：${esc(issue.message)}</li>`).join('')}</ul>`, { className: 'output-issue-details', saveKey: 'output-issues' })}`
     : notice('選択した記録に撮影不足・調書未確認はありません。');
   const limits = `<p class="hint">工事の保持上限：履歴を含め${LIMITS.photos}枚・原本合計${esc(formatBytes(LIMITS.totalBytes))}。1回の帳票：採用${OUTPUT_LIMITS.embeddedPhotos}枚・埋込画像${OUTPUT_LIMITS.embeddedBytes / 1024 / 1024}MiB（合成後の画像バイナリ合計）。</p>${model ? `<p class="hint">選択範囲の採用写真：${selectedPhotoCount} / ${OUTPUT_LIMITS.embeddedPhotos}枚。履歴写真は枚数に含みません。</p>` : ''}${outputTooLarge ? notice('1回に出力できる採用写真の枚数を超えています。原本を削除・圧縮せず、分類・用途・記録を選んで出力範囲を分けてください。', { tone: 'warning' }) : ''}`;
-  const checks = `<div id="outputChecks" class="output-issues"><h3>出力前の確認</h3>${limits}${issueContent}</div>`;
+  const checks = `<div id="outputChecks" class="output-issues"><h3>出力前の確認</h3>${limits}${issueContent}<p class="hint">調書が空欄でも途中版のプレビューを作成できます。完成版は不足と未確認の解消後に作成してください。</p></div>`;
   const prepare = actions(button('この範囲でプレビューを作る', { variant: 'primary', attrs: { 'data-action': 'prepare-output', 'data-unavailable': !chosen.length || outputTooLarge ? 'true' : undefined } }) + button('写真を単体で出力（保存先を選択）', { attrs: { 'data-action': 'export-photos', 'data-unavailable': !chosen.length ? 'true' : undefined } }) + button('調書へ戻る', { attrs: { 'data-mode': 'report' } }), { className: 'report-actions' });
   const setup = `<section class="panel">${panelHeading('調書・写真帳を出力', { eyebrow: 'PREVIEW & PRINT', className: 'section-heading', meta: badge('見本様式 / TS調書はA4横') })}${stepper}${settings}${records}${checks}${prepare}<p class="hint">撮影不要は理由、未撮影・要撮り直しは不足として表示します。採用していない履歴写真は掲載しません。写真単体出力は対応ブラウザーで保存先フォルダーを選択できます。未対応の場合は写真ZIPを保存します。</p></section>`;
   if (!prepared) return setup;
