@@ -1,6 +1,6 @@
 // Replaced by the static build. The versioned module locates the app's root scope.
-const APP_VERSION = '0.9.5';
-const BUILD_ID = 'efac25a91373c1ef6702';
+const APP_VERSION = '0.9.6';
+const BUILD_ID = '70ba0db9e490bd24483d';
 const APP_BASE_RELATIVE = '../../';
 const APP_BASE = new URL(APP_BASE_RELATIVE, import.meta.url);
 
