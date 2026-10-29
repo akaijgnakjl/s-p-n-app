@@ -38,12 +38,14 @@ export function printPageHeader({ projectNameLines, title, editionLabel }) {
   return `<header class="page-header"><div class="project-name">${printLines(projectNameLines)}</div><div class="page-title">${escapeHTML(title)}</div><div class="edition-label">${escapeHTML(editionLabel)}</div></header>`;
 }
 
-export function printPageFooter({ number, total, continued }) {
-  return `<footer class="page-footer"><span>測量フォトノート · 簡易様式${continued ? '（続き）' : ''}</span><span>${number} / ${total}</span></footer>`;
+export function printPageFooter({ number, total, continued, plain = false }) {
+  return `<footer class="page-footer"><span>${plain ? '' : `測量フォトノート · 簡易様式${continued ? '（続き）' : ''}`}</span><span>${number} / ${total}</span></footer>`;
 }
 
 export function printPage(page, { number, total, edition, projectNameLines, editionLabel, imageURLs, statusLabels }) {
   if(['bm','trial','ts','ts-photo'].includes(page.referenceLayout))return `<article class="page page-measured page-measured-${page.referenceLayout}" data-page="${number}" data-page-kind="${page.kind}" data-use-case="${escapeHTML(page.useCase||page.rows?.[0]?.useCase||'')}">${edition==='draft'?'<div class="watermark">途中版</div>':''}<main class="page-content">${printPageBody(page,imageURLs,statusLabels)}</main></article>`;
   if(page.referenceLayout==='control-point')return `<article class="page page-control-point" data-page="${number}" data-page-kind="${page.kind}" data-use-case="${escapeHTML(page.useCase||page.rows?.[0]?.useCase||'基準点')}">${edition==='draft'?'<div class="watermark">途中版</div>':''}<main class="page-content">${printPageBody(page,imageURLs,statusLabels)}</main></article>`;
-  return `<article class="page${page.orientation==='landscape'?' page-landscape':''}${page.referenceType?' page-reference-report':''}" data-page="${number}" data-page-kind="${page.kind}" data-use-case="${escapeHTML(page.useCase||page.rows?.find(row=>row.useCase)?.useCase||'')}"${page.orientation==='landscape'?' style="page:landscape"':''}>${edition === 'draft' ? '<div class="watermark">途中版</div>' : ''}${printPageHeader({ projectNameLines, title: page.title+(page.kind==='photo'&&page.groupName&&page.groupName.length<=60?' ／ '+page.groupName:''), editionLabel })}<main class="page-content">${printPageBody(page, imageURLs, statusLabels)}</main>${printPageFooter({ number, total, continued: page.continued })}</article>`;
+  // 基準点・仮BMの見本様式の調書は、上の工事名・様式名と下の「簡易様式」を出さない（ページ番号だけ残す）。
+  const plain=page.referenceType==='survey';
+  return `<article class="page${page.orientation==='landscape'?' page-landscape':''}${page.referenceType?' page-reference-report':''}${plain?' page-plain':''}" data-page="${number}" data-page-kind="${page.kind}" data-use-case="${escapeHTML(page.useCase||page.rows?.find(row=>row.useCase)?.useCase||'')}"${page.orientation==='landscape'?' style="page:landscape"':''}>${edition === 'draft' ? '<div class="watermark">途中版</div>' : ''}${plain?'':printPageHeader({ projectNameLines, title: page.title+(page.kind==='photo'&&page.groupName&&page.groupName.length<=60?' ／ '+page.groupName:''), editionLabel })}<main class="page-content">${printPageBody(page, imageURLs, statusLabels)}</main>${printPageFooter({ number, total, continued: page.continued, plain })}</article>`;
 }
