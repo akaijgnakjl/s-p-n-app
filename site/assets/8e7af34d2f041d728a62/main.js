@@ -1180,6 +1180,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.movePhoto){photoMoveDialog(button.dataset.movePhoto);return;}
     if(button.dataset.deletePhoto){photoDeleteDialog(button.dataset.deletePhoto);return;}
     if(button.dataset.action==='finish-work'){finishWorkDialog();return;}
+    if(button.dataset.action==='open-gigafile'){window.open('https://gigafile.nu/','_blank','noopener');return;}
     if(button.dataset.action==='save-reports'){run(()=>flushReportDrafts(true));return;}
     if(button.dataset.action==='resume-paste'&&pendingPaste){pasteTextDialog({...pendingPaste.settings,text:pendingPaste.text},pendingPaste.text);return;}
     if(button.dataset.action==='discard-paste'){pendingPaste=null;render();return;}
