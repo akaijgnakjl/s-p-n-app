@@ -28,7 +28,7 @@ export function renderInitialView({name='',routeName='',maxPhotos=LIMITS.photos}
 }
 // 作業ZIPを保存して終了する欄。撮影・確認とZIP受け渡しの両方に置く（ZIPの保存はこの中のダイアログで行う）。
 export function renderFinishWork(){
-  return `<section class="panel review-panel finish-work-panel">${panelHeading('作業の終了',{level:3,className:'ui-panel-heading--responsive',description:'作業ZIPを保存した後、このブラウザーの一時保存を消去できます。',actions:button('保存を確認して作業を終了',{variant:'danger',attrs:{'data-action':'finish-work'}})})}</section>`;
+  return `<section class="panel review-panel finish-work-panel">${panelHeading('作業の終了',{level:3,className:'ui-panel-heading--responsive',description:'作業ZIPを保存した後、このブラウザーの一時保存を消去できます。',actions:button('保存を確認して作業を終了',{variant:'danger',attrs:{'data-action':'finish-work'}})})}${actions(button('ギガファイル',{attrs:{'data-action':'open-gigafile','aria-label':'ギガファイル便（gigafile.nu）を開く'}}),{className:'finish-work-links'})}</section>`;
 }
 export function renderHandoff({targetCount,photoCount,sizeValue,sizeUnit,lastExportLabel,missing,unnecessary,maxPhotos}){
   const limitLabel=formatBytes(LIMITS.totalBytes);
