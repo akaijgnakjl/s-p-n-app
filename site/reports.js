@@ -32,13 +32,14 @@ function outputError(code, message, issues = []) {
 }
 
 /** Conservative character cells plus explicit line breaks keep CJK and long words inside cells. */
-export function wrapOutputText(value, width = 54) {
+export function wrapOutputText(value, width = 54, { halfWidth = false } = {}) {
   const lines = [];
   for (const paragraph of String(value ?? '').replace(/\r\n?/g, '\n').split('\n')) {
     let line = '', used = 0;
     for (const character of Array.from(paragraph)) {
       // Count even wide Latin letters as full cells: wrapping must not add unplanned lines.
-      const size = 1;
+      // 基準点・仮BMの見本様式の表は列が広いので、数字などの半角は半分の幅で数える（座標を途中で折り返さない）。
+      const size = halfWidth && /^[\x20-\x7e]$/.test(character) ? 0.55 : 1;
       if (line && used + size > width) { lines.push(line); line = ''; used = 0; }
       line += character;
       used += size;
@@ -125,7 +126,7 @@ function reportPages(records) {
       const reviewLabel = context.review === 'reviewed' ? '' : context.review === 'stale' ? '［変更後・再確認待ち］' : '［調書未確認］';
       const cells = [`${first.useCase === '仮BM' ? (page.referenceType==='survey'?`${index + 1}`:`${index+1}：${context.targetName}`) : context.targetName}${reviewLabel}`,
         ...columns.map(column => fieldValue(context.record, column.key) || '—（未入力）')]
-        .map((value, cellIndex) => wrapOutputText(value, cellIndex === 0 ? 9 : 10));
+        .map((value, cellIndex) => wrapOutputText(value, cellIndex === 0 ? 9 : 10, { halfWidth: page.referenceType === 'survey' }));
       const totalLines = Math.max(...cells.map(lines => lines.length));
       let offset = 0;
       while (offset < totalLines) {

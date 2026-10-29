@@ -149,9 +149,10 @@ export function formatStation(value, notation = 'SP', custom = '') {
 export function sectionLabel(section) {
   if (section === null || section === undefined) return '';
   validateReportSection(section);
-  const length = constructionSection(section.start, section.end, section.excluded).length;
+  const { length, excludedMm } = constructionSection(section.start, section.end, section.excluded);
   const range = section.notation === 'SP' ? `SP ${section.start.trim()} ～ ${section.end.trim()}` : `${formatStation(section.start, section.notation, section.custom)} ～ ${formatStation(section.end, section.notation, section.custom)}`;
-  return `${range}　不施工区間長 ${section.excluded?.trim() || '0'} m　L= ${length} m`;
+  // 不施工区間長が0（空欄）の時は表示しない。
+  return `${range}${excludedMm ? `　不施工区間長 ${section.excluded.trim()} m` : ''}　L= ${length} m`;
 }
 
 /** Optional additions to schema 2; unknown bounded field keys survive existing saved work. */

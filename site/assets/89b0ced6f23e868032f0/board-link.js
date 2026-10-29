@@ -2,9 +2,12 @@ import {getContext,USE_CASES} from './model.js';
 import {BOARD_TEMPLATES,createBoard} from './boards.js';
 import {tsCaptureBoard} from './ts-board.js';
 
+// 黒板の工事名は工事名と同じ文字のまま、利用者が入れた改行（空白を改行に置き換えたものを含む）だけを残す。
+const bare=value=>String(value??'').replace(/\s+/g,'');
+export function boardJobName(value,projectName){return String(value??'').includes('\n')&&bare(value)===bare(projectName)?String(value):projectName;}
 export function linkedBoard(project,recordId,board,{report=true,preservePoint=false}={}){
   if(!board)return null;
-  const {target,record,group}=getContext(project,recordId),values={...board.values,job:project.name,route:group?.kind==='路線'?group.name:'',point:['現密','コア密'].includes(target.useCase)?'':preservePoint?board.values.point:target.name};
+  const {target,record,group}=getContext(project,recordId),values={...board.values,job:boardJobName(board.values.job,project.name),route:group?.kind==='路線'?group.name:'',point:['現密','コア密'].includes(target.useCase)?'':preservePoint?board.values.point:target.name};
   if(report&&Object.hasOwn(record.reportFields||{},'station'))values.location=record.reportFields.station;
   if(report&&target.useCase!=='TS出来形(バリアフリー)'&&Object.hasOwn(record.reportFields||{},'remarks'))values.remarks=record.reportFields.remarks;
   const result=createBoard(board.templateId,values,board.legacyColor===undefined?{}:{legacyColor:board.legacyColor});
