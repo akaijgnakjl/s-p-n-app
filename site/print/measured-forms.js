@@ -1,7 +1,7 @@
 import {escapeHTML as esc} from '../ui/components.js';
 import {USE_CASES} from '../definitions.js';
-import {constructionSection,formatStation,tsReportCells,tsMeasurements,tsReportStation} from '../report-data.js';
-import {controlPointLines as wrap} from './control-point.js';
+import {tsReportCells,tsMeasurements,tsReportStation} from '../report-data.js';
+import {controlPointLines as wrap,sectionValues,sectionRowSVG,sectionExcludedSVG,fitCellLines,fitLinesSVG} from './control-point.js';
 
 // Read-only measurements of the user's four PDF references. Units are PDF points.
 const mm=pt=>pt*25.4/72;
@@ -17,26 +17,25 @@ export const MEASURED_FORMS_CSS=`
 
 const BM_CENTERS=[92.52,185.1,270.72,360.3,484.98],BM_WIDTHS=[64,104,52,111,121];
 function bmCells(context,index){const f=context.record.reportFields||{};return [String(index+1),f.station||'—（未入力）',f.position||'—（未入力）',f.height||'—（未入力）',f.remarks||''];}
-function sectionParts(section){if(!section)return null;const result=constructionSection(section.start,section.end,section.excluded);return [section.notation==='自由入力'?section.custom:section.notation,...[section.start,section.end].map(value=>section.notation==='No.'?formatStation(value,'No.').slice(3):value),result.length,result.excludedMm?section.excluded:''];}
 export function planBMReports(records){
-  if(records.some(c=>wrap(c.groupName,360).length>2||wrap(c.itemName,360).length>2||bmCells(c,0).some((value,i)=>wrap(value,BM_WIDTHS[i]).length>3)||sectionParts(c.sectionData)?.some((value,i)=>wrap(value,[45,64,90,85,85][i]).length>1)))return null;
+  if(records.some(c=>wrap(c.groupName,360).length>2||wrap(c.itemName,360).length>2||bmCells(c,0).some((value,i)=>fitCellLines(value,BM_WIDTHS[i]).length>3)))return null;
   const groups=new Map();for(const c of records){const key=JSON.stringify([c.groupId,c.category,c.itemName,c.section]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(c);}
-  const pages=[];for(const group of groups.values())for(let at=0;at<group.length;at+=9){const first=group[0];pages.push({kind:'report',useCase:'仮BM',title:'仮ＢＭ設置箇所',referenceLayout:'bm',groupName:first.groupName,itemName:first.itemName,section:first.section,sectionData:first.sectionData,continued:at>0,columns:[{key:'name',label:'番号'},...USE_CASES.仮BM.reportColumns],usedMm:mm(683.04),entries:group.slice(at,at+9).map((c,i)=>({kind:'row',recordId:c.recordId,targetId:c.targetId,heightMm:mm(57.84),cells:bmCells(c,at+i).map((value,col)=>wrap(value,BM_WIDTHS[col]))}))});}return pages;
+  const pages=[];for(const group of groups.values())for(let at=0;at<group.length;at+=9){const first=group[0];pages.push({kind:'report',useCase:'仮BM',title:'仮ＢＭ設置箇所',referenceLayout:'bm',groupName:first.groupName,itemName:first.itemName,section:first.section,sectionData:first.sectionData,continued:at>0,columns:[{key:'name',label:'番号'},...USE_CASES.仮BM.reportColumns],usedMm:mm(683.04),entries:group.slice(at,at+9).map((c,i)=>({kind:'row',recordId:c.recordId,targetId:c.targetId,heightMm:mm(57.84),cells:bmCells(c,at+i).map((value,col)=>fitCellLines(value,BM_WIDTHS[col]))}))});}return pages;
 }
 export function printBMReport(page){
   let b=Array.from('仮ＢＭ設置箇所').map((v,i)=>text([207.84,237.774,262.578,292.512,322.446,352.38,382.314][i],92.52,v,18,'start')).join('');
   b+=rect(56.7,115.38,.96,683.04)+rect(549.54,116.34,.96,682.08)+rect(57.66,115.38,492.84,.96)+rect(57.66,797.46,492.84,.96)+rect(181.14,116.34,.06,120.72);
   for(const x of [128.34,240.84,300.54,419.94])b+=rect(x,237.06,.06,560.4);
   for(const y of [156.24,196.62,237,277.38,335.22,393.06,450.9,508.74,566.58,624.42,682.26,740.1])b+=line(57.66,y,549.54);
-  const s=sectionParts(page.sectionData);
+  const s=sectionValues(page.sectionData);
   // 不施工がある時は施工区間の枠を上下2段にし、下段の中央へ不施工区間長、右端へL=を置く。
-  const split=Boolean(s?.[4]),sy=split?211.1:221.88,ss=split?12:13.98;
+  const split=Boolean(s?.excluded),sy=split?211.1:221.88,ss=split?12:13.98;
   for(const [label,y] of [['項目名',140.64],['施工箇所',181.02]])b+=text(119.61,y,label);
   b+=text(119.61,split?sy:221.4,'施工区間',ss);
   b+=centered(365.37,140.64,wrap(page.itemName,360))+centered(365.37,181.02,wrap(page.groupName,360));
-  if(s){b+=text(230.73,sy,s[0],ss)+text(269.94,sy,s[1],ss)+text(330.69,sy,'～',ss)+text(388.5,sy,s[2],ss)+text(452.73,split?231.2:sy,'L=',ss)+text(503.1,split?231.2:sy,s[3],ss);if(split)b+=line(181.2,216.81,549.54)+text(119.61,231.2,'不施工',12)+text(365.37,231.2,`${s[4]} m`,12);}
+  if(s){b+=sectionRowSVG(s,{y:sy,lengthY:split?231.2:sy,size:ss});if(split)b+=line(181.2,216.81,549.54)+text(119.61,231.2,'不施工',12)+sectionExcludedSVG(365.37,231.2,s);}
   ['番号','測点','位置','高さ','備考'].forEach((label,i)=>b+=text(BM_CENTERS[i],i===0||i===2?262.26:261.779,label));
-  page.entries.forEach((entry,i)=>{b+=`<g data-record-id="${esc(entry.recordId)}">`+entry.cells.map((values,col)=>centered(BM_CENTERS[col],(col===0||col===1||col===2?311.339:310.859)+57.84*i,values)).join('')+'</g>';});return sheet('bm','仮BM設置箇所の調書',b);
+  page.entries.forEach((entry,i)=>{b+=`<g data-record-id="${esc(entry.recordId)}">`+entry.cells.map((values,col)=>fitLinesSVG(BM_CENTERS[col],n((col===0||col===1||col===2?311.339:310.859)+57.84*i),values,BM_WIDTHS[col])).join('')+'</g>';});return sheet('bm','仮BM設置箇所の調書',b);
 }
 
 const TRIAL_IMAGES=[[78.96,66.6,309.12,228.84],[75.48,313.08,315,233.28],[75.48,564.48,315,233.16]];

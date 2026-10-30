@@ -16,25 +16,35 @@ const extent=(character,size)=>/[^\x20-\x7e]/.test(character)?size:/[WM@%]/.test
 export function controlPointLines(value,width=90,size=13.98){
   return String(value??'').split('\n').flatMap(paragraph=>{const lines=[];let text='',used=0;for(const character of Array.from(paragraph)){const step=extent(character,size);if(text&&used+step>width){lines.push(text);text='';used=0;}text+=character;used+=step;}lines.push(text);return lines;});
 }
-function sectionValues(section){
+export function sectionValues(section){
   if(!section)return null;
   const result=constructionSection(section.start,section.end,section.excluded);
   const prefix=section.notation==='自由入力'?section.custom:section.notation;
   const value=raw=>section.notation==='No.'?formatStation(raw,'No.').slice(3):raw;
   return {prefix,start:value(section.start),end:value(section.end),length:result.length,excluded:result.excludedMm?section.excluded:''};
 }
+const CELL_MAX=90;
 function reportValues(context){const f=context.record.reportFields||{};return [context.targetName,f.x||'—（未入力）',f.y||'—（未入力）',f.height||'—（未入力）',f.kind||'—（未入力）'];}
-// 見本どおりの位置に収まるか。KP=56246.94のように長い時は「頭 起点 ～ 終点」を1行にまとめて中央へ置く。
-const sectionSpread=values=>[[values.prefix,100],[values.start,45],[values.end,90]].every(([value,width])=>controlPointLines(value,width).length===1);
-const sectionJoined=values=>`${values.prefix||''}${values.start} ～ ${values.end}`;
-function sectionFits(section){if(!section)return true;const values=sectionValues(section);return (sectionSpread(values)||controlPointLines(sectionJoined(values),290).length===1)&&controlPointLines(`L=${values.length}`,90).length===1&&String(values.excluded).length<=12;}
+// 基準点・仮BMの施工区間は仮BMの見本の位置（頭＋起点・～・終点・L=・延長）にそろえる。
+// 値が長くて欄に入らない時は、文字の高さはそのままで横幅だけ縮める（どんなに長くても様式を崩さない）。
+const textWidth=(value,size)=>Array.from(String(value??'')).reduce((sum,character)=>sum+extent(character,size),0);
+const fitText=(x,y,value,size,max)=>`<text x="${x}" y="${y}" font-size="${size}" text-anchor="middle"${textWidth(value,size)>max?` textLength="${max}" lengthAdjust="spacingAndGlyphs"`:''}>${esc(value)}</text>`;
+// 表の欄は自動で折り返さず、入らない行は横幅だけ縮める。改行は利用者が入れた所だけ（半分以下まで縮む長さの行だけ自動で折り返す）。
+export function fitCellLines(value,max,size=13.98){return String(value??'').replace(/\r\n?/g,'\n').split('\n').flatMap(line=>textWidth(line,size)>max*2?controlPointLines(line,max*2,size):[line]);}
+export function fitLinesSVG(x,baseline,lines,max,size=13.98,leading=15){const start=baseline-(lines.length-1)*leading/2;return lines.map((value,index)=>fitText(x,Number((start+index*leading).toFixed(3)),value,size,max)).join('');}
+export function sectionStart(values){return values.prefix?`${values.prefix}${/[=.]$/.test(values.prefix)?'':' '}${values.start}`:values.start;}
+export function sectionRowSVG(values,{y,lengthY=y,size}){
+  if(!values)return '';
+  return fitText(250,y,sectionStart(values),size,124)+fitText(330.69,y,'～',size,16)+fitText(389,y,values.end,size,94)+fitText(452.73,lengthY,'L=',size,20)+fitText(503.1,lengthY,values.length,size,80);
+}
+export const sectionExcludedSVG=(x,y,values)=>fitText(x,y,`${values.excluded} m`,12,300);
 export function planControlPointReports(records){
-  const eligible=records.every(context=>controlPointLines(context.groupName,380).length<=2&&controlPointLines(context.itemName,380).length<=2&&reportValues(context).every(value=>controlPointLines(value).length<=3)&&sectionFits(context.sectionData));
+  const eligible=records.every(context=>controlPointLines(context.groupName,380).length<=2&&controlPointLines(context.itemName,380).length<=2&&reportValues(context).every(value=>fitCellLines(value,CELL_MAX).length<=3));
   if(!eligible)return null;
   const groups=new Map();
   for(const context of records){const key=JSON.stringify([context.groupId,context.category,context.itemName,context.section]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(context);}
   const pages=[];
-  for(const rows of groups.values())for(let at=0;at<rows.length;at+=10){const first=rows[0];pages.push({kind:'report',useCase:'基準点',title:'基準点設置箇所',columns:[{key:'name',label:'点名'},...USE_CASES.基準点.reportColumns],referenceLayout:'control-point',groupName:first.groupName,itemName:first.itemName,section:first.section,sectionData:first.sectionData,continued:at>0,usedMm:mm(682.08),entries:rows.slice(at,at+10).map(context=>({kind:'row',recordId:context.recordId,targetId:context.targetId,heightMm:mm(51.96),cells:reportValues(context).map(value=>controlPointLines(value))}))});}
+  for(const rows of groups.values())for(let at=0;at<rows.length;at+=10){const first=rows[0];pages.push({kind:'report',useCase:'基準点',title:'基準点設置箇所',columns:[{key:'name',label:'点名'},...USE_CASES.基準点.reportColumns],referenceLayout:'control-point',groupName:first.groupName,itemName:first.itemName,section:first.section,sectionData:first.sectionData,continued:at>0,usedMm:mm(682.08),entries:rows.slice(at,at+10).map(context=>({kind:'row',recordId:context.recordId,targetId:context.targetId,heightMm:mm(51.96),cells:reportValues(context).map(value=>fitCellLines(value,CELL_MAX))}))});}
   return pages;
 }
 function photoLines(row){const f=row.fields||{};return (row.useCase==='仮BM'?[f.remarks||'',`H=${f.height||'—'}`]:[row.targetName,f.kind||'—',`X=${f.x||'—'}`,`Y=${f.y||'—'}`,`H=${f.height||'—'}`]).flatMap(value=>controlPointLines(value,140,8.28));}
@@ -62,9 +72,9 @@ export function printControlPointReport(page){
   body+=text(107.028,sectionY,'施工区間',sectionSize);
   body+=centeredLines(353.65,141.18,controlPointLines(page.itemName,380));
   body+=centeredLines(353.65,181.56,controlPointLines(page.groupName,380));
-  if(section){body+=(sectionSpread(section)?text(245.158,sectionY,section.prefix,sectionSize)+text(318.697,sectionY,section.start,sectionSize)+text(344.132,sectionY,'～',sectionSize)+text(403.204,sectionY,section.end,sectionSize):text(310,sectionY,sectionJoined(section),sectionSize))+text(499.7,split?231:sectionY,`L=${section.length}`,sectionSize);if(split)body+=line(155.97,216.65,550.26,216.65)+text(107.028,231,'不施工',12)+text(353.65,231,`${section.excluded} m`,12);}
+  if(section){body+=sectionRowSVG(section,{y:sectionY,lengthY:split?231:sectionY,size:sectionSize});if(split)body+=line(155.97,216.65,550.26,216.65)+text(107.028,231,'不施工',12)+sectionExcludedSVG(353.65,231,section);}
   ['点名','X座標','Y座標','高さ H','点の種類'].forEach((label,index)=>body+=text(107.028+98.7*index,262.32,label));
-  page.entries.filter(entry=>entry.kind==='row').forEach((entry,index)=>{body+=`<g data-record-id="${esc(entry.recordId)}">`+entry.cells.map((values,column)=>centeredLines(107.028+98.7*column,308.459+51.96*index,values)).join('')+'</g>';});
+  page.entries.filter(entry=>entry.kind==='row').forEach((entry,index)=>{body+=`<g data-record-id="${esc(entry.recordId)}">`+entry.cells.map((values,column)=>fitLinesSVG(107.028+98.7*column,308.459+51.96*index,values,CELL_MAX)).join('')+'</g>';});
   return `<div class="control-point-sheet">${svg('基準点設置箇所の調書',body)}</div>`;
 }
 
