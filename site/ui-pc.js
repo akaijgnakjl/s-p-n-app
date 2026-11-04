@@ -55,7 +55,9 @@ export function renderReportView(project, { groupId = '__all__', useCase = '基�
   return `${heading}${routeSections}${controls}<p id="reportEditStatus" class="hint" role="status">${drafts.size ? '未保存の編集があります。保存・入力確認・ZIP保存で確定します。' : '保存済みの内容です。'}</p><div class="report-table-wrap"><table class="report-input-table"><thead><tr><th>対象・${esc(definition.categoryLabel)}</th>${columns.map(column => `<th>${esc(column.label)}</th>`).join('')}<th>確認・任意設定</th></tr></thead><tbody>${tableRows}</tbody></table></div><p class="hint ui-section-note">座標・高さは入力のみです。計算・合否判定はしません。備考は任意です。</p></section>`;
 }
 
-export function renderOutputView(project, { groupId = '__all__', useCase = '', selectedIds = new Set(), edition = 'draft', prepared = null, ready = false, approved = false } = {}) {
+// 移動先：kind='field'は撮影・確認の記録（slotは撮影枠）、'report'は調書入力の行。
+const gotoButton=({recordId,kind,slot})=>button('ここへ移動',{variant:'subtle',className:'output-goto',attrs:{'data-goto-record':recordId||undefined,'data-goto-kind':kind,'data-goto-slot':slot||undefined}});
+export function renderOutputView(project, { groupId = '__all__', useCase = '', selectedIds = new Set(), edition = 'draft', prepared = null, ready = false, approved = false, blockers = [] } = {}) {
   const rows = scopedRecords(project, groupId, useCase), allowed = new Set(rows.map(row => row.record.id));
   const chosen = [...selectedIds].filter(id => allowed.has(id));
   let model, issueError = '';
@@ -68,10 +70,12 @@ export function renderOutputView(project, { groupId = '__all__', useCase = '', s
   const recordList = `<div class="output-record-list">${rows.map(({ target, record, group }) => checkbox(`${target.name} ／ ${target.useCase} ／ ${record.category}`, { checked: selectedIds.has(record.id), attrs: { 'data-output-record': record.id }, description: group ? `${group.kind}：${group.name}` : '工事直下' })).join('') || '<p class="hint keep">対象の記録がありません。</p>'}</div>`;
   const records = disclosure(`出力する記録：${chosen.length} / ${rows.length}記録`, recordButtons + recordList, { className: 'output-records', saveKey: 'output-records' });
   const issueContent = issueError ? notice(issueError, { tone: 'error', role: 'alert', className: 'field-error' }) : !chosen.length ? '<p class="hint keep">出力する記録を選択してください。</p>' : issues.length
-    ? `<p class="hint keep">不足・未入力・要再確認が${issues.length}件あります。途中版で確認できます。</p>${disclosure(`確認事項：${issues.length}件`, `<ul>${issues.map(issue => `<li>${esc(issue.targetName)} ／ ${esc(issue.category)}：${esc(issue.message)}</li>`).join('')}</ul>`, { className: 'output-issue-details', saveKey: 'output-issues' })}`
+    ? `<p class="hint keep">不足・未入力・要再確認が${issues.length}件あります。途中版で確認できます。</p>${disclosure(`確認事項：${issues.length}件`, `<ul class="output-goto-list">${issues.map(issue => `<li><span>${esc(issue.targetName)} ／ ${esc(issue.category)}：${esc(issue.message)}</span>${gotoButton({recordId:issue.recordId,kind:issue.code.startsWith('photo')?'field':'report',slot:issue.slotName})}</li>`).join('')}</ul>`, { className: 'output-issue-details', saveKey: 'output-issues' })}`
     : notice('撮影不足・調書の未確認はありません。');
+  // プレビューを作れない理由（編集中・未確定のもの）。それぞれの場所へ移動できる。
+  const blockerContent = blockers.length ? notice(`<strong>プレビューを作成できない理由があります</strong><ul class="output-goto-list">${blockers.map(item => `<li><span>${esc(item.message)}</span>${gotoButton(item)}</li>`).join('')}</ul>`, { tone: 'warning', role: 'alert', html: true }) : '';
   const limits = `<p class="hint">工事の上限：履歴を含め${LIMITS.photos}枚・原本合計${esc(formatBytes(LIMITS.totalBytes))}。1回の出力：採用写真${OUTPUT_LIMITS.embeddedPhotos}枚・画像合計${OUTPUT_LIMITS.embeddedBytes / 1024 / 1024}MiBまで。</p>${model ? `<p class="hint keep">採用写真：${selectedPhotoCount} / ${OUTPUT_LIMITS.embeddedPhotos}枚（履歴写真は含みません）。</p>` : ''}${outputTooLarge ? notice('採用写真が1回の上限を超えています。用途・記録を選び、分けて出力してください。原本の削除・圧縮は不要です。', { tone: 'warning' }) : ''}`;
-  const checks = `<div id="outputChecks" class="output-issues"><h3>出力前の確認</h3>${limits}${issueContent}<p class="hint">調書が空欄でも途中版は作れます。完成版は不足・未確認を解消してから作ります。</p></div>`;
+  const checks = `<div id="outputChecks" class="output-issues"><h3>出力前の確認</h3>${limits}${blockerContent}${issueContent}<p class="hint">調書が空欄でも途中版は作れます。完成版は不足・未確認を解消してから作ります。</p></div>`;
   const prepare = actions(button('プレビューを作成', { variant: 'primary', attrs: { 'data-action': 'prepare-output', 'data-unavailable': !chosen.length || outputTooLarge ? 'true' : undefined } }) + button('写真ファイルを保存', { attrs: { 'data-action': 'export-photos', 'data-unavailable': !chosen.length ? 'true' : undefined } }) + button('調書へ戻る', { attrs: { 'data-mode': 'report' } }), { className: 'report-actions' });
   const setup = `<section class="panel">${panelHeading('調書・写真帳を出力', { eyebrow: 'PREVIEW & PRINT', className: 'section-heading', meta: badge('見本様式 / TS調書はA4横') })}${stepper}${settings}${records}${checks}${prepare}<p class="hint">撮影不要は理由を、未撮影・要撮り直しは不足を表示します。履歴写真は載せません。写真ファイルは保存先を選べます（非対応ブラウザーはZIPで保存）。</p></section>`;
   if (!prepared) return setup;

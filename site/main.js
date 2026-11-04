@@ -551,6 +551,39 @@ function selectedOutputIds(){const allowed=new Set(scopedRecords(project,outputS
 function resetOutputSelection(){outputState.selectedIds=new Set(scopedRecords(project,outputState.groupId,outputState.useCase).map(c=>c.record.id));outputState.initialized=true;invalidateOutput();}
 function enterMode(nextMode){mode=nextMode;if(mode==='output'&&!outputState.initialized)resetOutputSelection();render();}
 
+// プレビューを作れない理由（編集中の管理名・未確定の貼り付け・収まらない/未入力の黒板・入力できない調書の値）を集める。
+function outputBlockers(){
+  const blockers=[];
+  for(const id of nameDrafts.keys()){const target=project.targets.find(t=>t.id===id);if(target)blockers.push({message:`管理名「${target.name}」を編集中です。保存か取消をしてください。`,kind:'field',recordId:target.records[0]?.id});}
+  if(pendingPaste)blockers.push({message:'調書に未確定の貼り付けがあります。反映するか取り消してください。',kind:'report'});
+  for(const [recordId,draft] of boardDrafts){
+    if(!draft.applyBoard)continue;
+    try{boardFits(draft.board,{skipPoint:isTrial(getContext(project,recordId).target.useCase)});}
+    catch(error){const {target,record}=getContext(project,recordId);blockers.push({message:`黒板（${target.name} ／ ${record.category}）：${error.message}`,kind:'field',recordId});}
+  }
+  if(reportDrafts.size){
+    const next=clone(project);
+    for(const [idKey,value] of reportDrafts){const at=idKey.indexOf(':'),id=idKey.slice(0,at),key=idKey.slice(at+1);try{setReportField(next,id,key,value);}catch(error){const {target,record}=getContext(project,id);blockers.push({message:`調書（${target.name} ／ ${record.category}）：${error.message}`,kind:'report',recordId:id});}}
+  }
+  return blockers;
+}
+// 出力画面の「ここへ移動」：撮影・確認の記録（撮影枠）か、調書入力の行を開く。
+function gotoOutputIssue(recordId,kind,slot=''){
+  const context=recordId?getContext(project,recordId):null;
+  if(context){activeGroupId=context.target.groupId||'';useCaseFilter='';onlyMissing=false;}
+  if(kind==='report'){
+    if(context)reportUseCase=context.target.useCase;
+    mode='report';render();
+    const row=context&&document.querySelector(`[data-record-id="${CSS.escape(recordId)}"][data-report-key]`)?.closest('tr');
+    (row||$('app'))?.scrollIntoView({block:'center'});row?.querySelector('textarea')?.focus({preventScroll:true});
+    return;
+  }
+  if(context){activeTargetId=context.target.id;activeRecordId=recordId;if(slot)activeCaptureSlot=slot;}
+  mode='field';render();
+  const target=slot&&document.querySelector(`[data-unnecessary="${CSS.escape(slot)}"]`)?.closest('article.slot');
+  (target||document.querySelector('.capture-main')||$('app'))?.scrollIntoView({block:'start'});
+}
+
 async function prepareOutput(){
   requireSavedNames();
   requireResolvedPaste();
@@ -1011,7 +1044,7 @@ function render() {
     const selected = selection();
     if(mode==='output'&&!outputState.initialized)resetOutputSelection();
     if(mode==='report'){const uses=[...new Set(scopedRecords(project,activeGroupId).map(c=>c.target.useCase))];if(!uses.includes(reportUseCase)&&uses.length)reportUseCase=uses[0];}
-    const view=mode==='field'?captureView(selected):mode==='organize'?organizeView():mode==='report'?renderReportView(project,{groupId:activeGroupId,useCase:reportUseCase,drafts:reportDrafts}):mode==='output'?renderOutputView(project,outputState):handoffView();
+    const view=mode==='field'?captureView(selected):mode==='organize'?organizeView():mode==='report'?renderReportView(project,{groupId:activeGroupId,useCase:reportUseCase,drafts:reportDrafts}):mode==='output'?renderOutputView(project,{...outputState,blockers:outputBlockers()}):handoffView();
     $('app').innerHTML = projectHeader()+view+capacityPanel();
     if(typeof ResizeObserver==='function'){navigationObserver?.disconnect();const nav=document.querySelector('.workspace-sticky-nav');if(nav){navigationObserver=new ResizeObserver(()=>document.documentElement.style.setProperty('--workspace-nav-height',`${nav.getBoundingClientRect().height}px`));navigationObserver.observe(nav);}}
 
@@ -1256,6 +1289,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.action==='review-dates'){reviewDatesDialog();return;}
     if(button.dataset.movePhoto){photoMoveDialog(button.dataset.movePhoto);return;}
     if(button.dataset.deletePhoto){photoDeleteDialog(button.dataset.deletePhoto);return;}
+    if(button.dataset.gotoKind){gotoOutputIssue(button.dataset.gotoRecord,button.dataset.gotoKind,button.dataset.gotoSlot);return;}
     if(button.dataset.action==='finish-work'){finishWorkDialog();return;}
     if(button.dataset.action==='open-gigafile'){window.open('https://gigafile.nu/','_blank','noopener');return;}
     if(button.dataset.action==='save-reports'){run(()=>flushReportDrafts(true));return;}
