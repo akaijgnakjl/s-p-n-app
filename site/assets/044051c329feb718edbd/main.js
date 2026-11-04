@@ -8,7 +8,7 @@ import { materialChoices } from './materials.js';
 import {exportPhotos} from './photo-export.js';
 import {readTSScreenshot} from './ts-screenshot.js';
 import {applyTSScreenshot} from './ts-screenshot-data.js';
-import {setRouteSection,describeTargetDeletion,deleteTargets,setTSCommonFields,TS_COMMON_KEYS,setTSStationNotation} from './workflow.js';
+import {setRouteSection,describeTargetDeletion,deleteTargets,setTSCommonFields,TS_COMMON_KEYS,setTSStationNotation,setGroupApplyBoard} from './workflow.js';
 import {relinkBoardDrafts} from './board-link.js';
 import { openStorage } from './storage.js';
 import { exportWorkPackage, importWorkPackage, PACKAGE_LIMITS } from './package.js';
@@ -77,6 +77,7 @@ let pendingPaste = null;
 let activeCaptureSlot = '';
 let onlyMissing = false;
 let reportUseCase = '基準点';
+let applyBoardAll = false;
 const reportDrafts = new Map();
 const outputState = {groupId:'__all__',useCase:'',selectedIds:new Set(),edition:'draft',prepared:null,ready:false,approved:false,initialized:false};
 const thumbnails = new Map();
@@ -306,6 +307,14 @@ function boardFields(board, applyBoard = true, choices = true, {omitPoint=false,
   return `${choices?renderBoardChoices(board.templateId):''}${selectField('黒板の形式',optionItems(Object.values(BOARD_TEMPLATES).filter(item=>item.id!=='legacy-simple'||board.templateId===item.id).map(item=>[item.id,item.name]),board.templateId),{name:'templateId'})}${fields.map(item => field(item.key==='job'?'工事名（Enterで改行できます）':item.label, `board-${item.key}`, board.values[item.key], {type:item.type || 'text',max:1000,required:applyBoard && !item.optional,multiline:!!item.large||item.key==='job',attrs:{readonly:item.key==='route'||fixedTS&&['workType','remarks'].includes(item.key),...(item.key==='job'?{rows:2}:{})}})).join('')}${BOARD_FIELD_KEYS.filter(key => !visibleKeys.has(key)).map(key => `<input type="hidden" name="board-${key}" value="${esc(omitPoint&&key==='point'?'':board.values[key])}">`).join('')}${board.legacyColor?`<input type="hidden" name="legacyColor" value="${esc(board.legacyColor)}">`:''}`;
 }
 
+// 表示中の路線の撮影済み写真と、各記録の次の写真（編集中の黒板を含む）の合成をまとめてそろえる。
+async function applyBoardToGroup(applyBoard){
+  for(const [id,draft] of boardDrafts){const {target}=getContext(project,id);if(target.useCase!=='MMS'&&(activeGroupId==='__all__'||target.groupId===(activeGroupId||null)))boardDrafts.set(id,{...draft,applyBoard});}
+  let count=0;
+  await mutate(next=>{count=setGroupApplyBoard(next,activeGroupId,applyBoard);});
+  notify(`表示中の路線の撮影済み写真${count}枚と次の写真を「${applyBoard?'黒板を合成する':'合成しない'}」にそろえました。`);
+}
+
 function readBoard(form) {
   const values = Object.fromEntries(BOARD_FIELD_KEYS.map(key => [key, String(form.elements.namedItem(`board-${key}`)?.value || '').trim()]));
   const templateId=form.elements.templateId.value;
@@ -483,12 +492,28 @@ function tsCommonDialog(groupId){
   const records=project.targets.filter(t=>t.groupId===groupId&&t.useCase==='TS出来形(バリアフリー)').flatMap(t=>t.records);
   // 既に入力済みの値があれば初期値に使う（記録ごとに違う場合は最初に見つかった値）。
   const initial=key=>records.map(r=>String(r.reportFields?.[key]||'').trim()).find(Boolean)||'';
-  openDialog('測定者・規格値・社内規格値を一括入力',`<p>${esc(group.name)}のTS出来形 ${records.length}記録に同じ値を入れます。入力済みの値は上書きされます。</p><div class="dialog-fields">${field('測定者','surveyor',initial('surveyor'),{required:false})}${field('規格値 mm','standard',initial('standard'),{required:false})}${field('社内規格値 mm','internalStandard',initial('internalStandard'),{required:false})}</div><p class="hint">記録ごとの変更は調書の表でできます。</p>`,async data=>{
+  // 社内規格値は規格値に対する％（初期表示）か、mmの直接入力かを選べる。％の時は規格値×％÷100のmmで保存する。
+  const number=value=>/^-?\d+(?:\.\d+)?$/.test(String(value).trim())?Number(value):NaN;
+  const round=value=>String(Math.round(value*1000)/1000);
+  const standard0=number(initial('standard')),internal0=number(initial('internalStandard'));
+  const percent0=Number.isFinite(standard0)&&standard0!==0&&Number.isFinite(internal0)?String(Math.round(internal0/standard0*10000)/100):'';
+  const internalMm=data=>{
+    if(data.get('internalMode')==='mm')return String(data.get('internalStandard')||'').trim();
+    const percent=String(data.get('internalPercent')||'').trim();if(!percent)return '';
+    const p=number(percent),s=number(data.get('standard')||'');
+    if(!Number.isFinite(p))throw new Error('社内規格値の％は数字で入力してください。');
+    if(!Number.isFinite(s))throw new Error('社内規格値を％で入れる時は、規格値を数字（mm）で入力してください。');
+    return round(s*p/100);
+  };
+  const preview=()=>{const form=$('editorForm'),mode=form.elements.internalMode.value;form.querySelector('[data-internal="percent"]').hidden=mode!=='percent';form.querySelector('[data-internal="mm"]').hidden=mode!=='mm';let text='';try{const mm=internalMm(new FormData(form));text=mode==='percent'&&mm?`＝ 社内規格値 ${mm} mm`:'';}catch(error){text=mode==='percent'?error.message:'';}$('internalPreview').textContent=text;};
+  openDialog('測定者・規格値・社内規格値を一括入力',`<p>${esc(group.name)}のTS出来形 ${records.length}記録に同じ値を入れます。入力済みの値は上書きされます。</p><div class="dialog-fields">${field('測定者','surveyor',initial('surveyor'),{required:false})}${field('規格値 mm','standard',initial('standard'),{required:false})}${selectField('社内規格値の入れ方',optionItems([['percent','規格値に対する％で入力'],['mm','mmで直接入力']],'percent'),{name:'internalMode'})}<div data-internal="percent">${field('社内規格値 ％（規格値に対する割合）','internalPercent',percent0,{required:false})}</div><div data-internal="mm" hidden>${field('社内規格値 mm','internalStandard',initial('internalStandard'),{required:false})}</div><p id="internalPreview" class="hint keep" role="status"></p></div><p class="hint">記録ごとの変更は調書の表でできます。</p>`,async data=>{
     const values=Object.fromEntries(TS_COMMON_KEYS.map(key=>[key,String(data.get(key)||'').trim()]));
+    values.internalStandard=internalMm(data);
     const clearReportKeys=records.flatMap(r=>TS_COMMON_KEYS.map(key=>`${r.id}:${key}`));
     await mutate(next=>setTSCommonFields(next,groupId,values),`${group.name}のTS出来形 ${records.length}記録に反映しました。`,{clearReportKeys});
     clearReportKeys.forEach(key=>reportDrafts.delete(key));
   });
+  $('editorForm').oninput=preview;$('editorForm').onchange=preview;preview();
 }
 
 function tsStationDialog(groupId){
@@ -520,7 +545,7 @@ function targetDeleteDialog(ids){
 function invalidateOutput(){
   if(previewViewer?.isOpen())previewViewer.close();
   const frame=$('outputPreview');if(frame){frame.removeAttribute('srcdoc');frame.src='about:blank';}
-  outputState.prepared=null;outputState.ready=false;outputState.approved=false;
+  outputState.prepared=null;outputState.ready=false;outputState.approved=false;outputState.editedHTML=null;
 }
 function selectedOutputIds(){const allowed=new Set(scopedRecords(project,outputState.groupId,outputState.useCase).map(c=>c.record.id));return [...outputState.selectedIds].filter(id=>allowed.has(id));}
 function resetOutputSelection(){outputState.selectedIds=new Set(scopedRecords(project,outputState.groupId,outputState.useCase).map(c=>c.record.id));outputState.initialized=true;invalidateOutput();}
@@ -565,7 +590,7 @@ async function attachOutputPreview(){
   // srcdoc also works in embedded browsers that do not navigate Blob HTML URLs.
   // Keep only the Blob in prepared state; the transient text is handed to the live frame once.
   try{
-    const html=await prepared.blob.text();
+    const html=await currentOutputHTML(prepared);
     if(!frame.isConnected||outputState.prepared!==prepared)return;
     observeOutputFrame(frame,prepared);frame.srcdoc=html;
   }catch(error){if(frame.isConnected&&outputState.prepared===prepared)notify(`出力を表示できません：${error.message}`,true);}
@@ -590,13 +615,62 @@ function openCanvasPreview(id,trigger=document.activeElement){
   void previewViewer.showImage({title:'黒板の拡大',caption:'表示中の黒板です。データは変わりません。',loadBlob:()=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('黒板を表示できません。')),'image/png')),trigger});
 }
 
+// 全画面表示の「編集」：帳票の文字を押して直す。直した内容は印刷・PDF・閲覧用HTMLだけに使い、工事データは変えない。
+let previewEditing=false;
+const PREVIEW_EDIT_STYLE='html[data-editing] text,html[data-editing] .page :is(span,td,th,p,div,h1,h2,h3,header,figcaption):not(:has(*)){cursor:text}html[data-editing] text:hover{fill:#c62828}html[data-editing] .page :is(span,td,th,p,div,h1,h2,h3,header,figcaption):not(:has(*)):hover{outline:2px solid #c62828;outline-offset:1px}';
+function previewEditable(target){
+  if(target?.nodeType!==1)return null;
+  const text=target.closest('text');if(text)return text;
+  return target.children.length===0&&target.textContent.trim()&&target.closest('.page')?target:null;
+}
+function setPreviewEditing(on){
+  previewEditing=on;
+  const button=$('previewEdit');if(button){button.setAttribute('aria-pressed',String(on));button.textContent=on?'編集を終える':'編集';}
+  const doc=previewFrame()?.contentDocument;if(!doc?.documentElement)return;
+  if(!on){delete doc.documentElement.dataset.editing;return;}
+  doc.documentElement.dataset.editing='true';
+  if(!doc.getElementById('spnEditStyle')){const style=doc.createElement('style');style.id='spnEditStyle';style.textContent=PREVIEW_EDIT_STYLE;doc.head.append(style);}
+  if(!doc.documentElement.dataset.editHook){
+    doc.documentElement.dataset.editHook='true';
+    doc.addEventListener('click',event=>{
+      if(!previewEditing||!$('previewDialog').open||doc.documentElement.dataset.editing!=='true')return;
+      const element=previewEditable(event.target);if(!element)return;
+      event.preventDefault();event.stopPropagation();editPreviewText(element);
+    },true);
+  }
+  notify('直したい文字を押してください。直した内容は印刷・PDFだけに使います。');
+}
+function editPreviewText(element){
+  const svg=element.namespaceURI==='http://www.w3.org/2000/svg';
+  openDialog('帳票の文字を直す',`<p class="hint keep">印刷・PDF・閲覧用HTMLだけに使います。調書入力などの工事データは変わりません。プレビューを作り直すと元に戻ります。</p><div class="dialog-fields">${textareaField('文字',{name:'previewText',value:element.textContent,max:null,rows:3,required:false})}</div>`,async data=>{
+    const value=String(data.get('previewText')??'');
+    element.textContent=svg?value.replace(/\s*\r?\n\s*/g,' '):value;
+    outputState.editedHTML=serializeOutputDocument(element.ownerDocument);
+    $('previewCaption').textContent='文字を直しました。印刷・PDF・閲覧用HTMLにだけ反映します（工事データは変わりません）。';
+  },'直す');
+}
+// 全画面表示中は表示中の帳票、そうでなければ出力画面の帳票。
+const previewFrame=()=>document.querySelector('#previewStage iframe')||$('outputPreview');
+// 直した帳票を印刷用HTMLとして保存する（表示倍率や編集用の印は外す）。画面を描き直しても直した内容を使い続ける。
+function serializeOutputDocument(doc){
+  const root=doc.documentElement.cloneNode(true);
+  for(const key of ['editing','editHook','fullscreenHook','previewKeyboard','outputReady'])delete root.dataset[key];
+  root.querySelector('#spnEditStyle')?.remove();
+  root.querySelector('body')?.style.removeProperty('zoom');
+  root.querySelector('.print-controls')?.style.removeProperty('display');
+  return `<!doctype html>\n${root.outerHTML}`;
+}
+async function currentOutputHTML(prepared){
+  return outputState.prepared===prepared&&outputState.editedHTML?outputState.editedHTML:prepared.blob.text();
+}
 async function openPrintOutput(){
   requireSavedNames();
   const prepared=outputState.prepared;
+  if(prepared&&outputState.ready&&!outputState.approved)throw new Error('出力画面の「出力範囲・版・写真・調書の内容を確認しました」にチェックしてから印刷してください。');
   if(!prepared||!outputState.ready||!outputState.approved||prepared.fingerprint!==JSON.stringify(project)||boardDrafts.size||reportDrafts.size)throw new Error('最新のプレビューを作成し、内容を確認してください。');
   const win=window.open('','_blank');if(!win)throw new Error('印刷画面を開けません。ポップアップの許可を確認してください。');
   try{
-    const html=await prepared.blob.text();
+    const html=await currentOutputHTML(prepared);
     if(outputState.prepared!==prepared){win.close();throw new Error('内容が変わりました。プレビューを作り直してください。');}
     win.document.open();win.document.write(html);win.document.close();
   }catch(error){win.close();throw error;}
@@ -866,7 +940,7 @@ function captureView({group,target,record,visible}){
     const tabs=record=>tabBar(target.records.map(r=>tabButton(`${def.categoryLabel}：${r.category}`,{selected:r.id===record.id,attrs:{'data-record':r.id}})).join('')+(remaining.length?button(`＋ ${def.categoryLabel}の記録を追加`,{className:'add-record',attrs:{'data-action':'add-record'}}):''),{label:def.categoryLabel,className:'record-tabs'});
     selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title${nameDrafts.has(target.id)?' is-editing':''}">${inlineTargetName(target)}${badge(target.useCase)}${button('管理名・所属を訂正',{variant:'subtle',attrs:{'data-edit-target':target.id}})}</div>${renderTargetNavigation(visible,target.id,{placement:'top'})}<p class="hint keep">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">区分を確認してから写真の種類を選んでください。</p>${tabs(record)}${target.useCase==='TS出来形(バリアフリー)'?renderTSReading(record):''}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div>${renderTargetNavigation(visible,target.id,{placement:'bottom'})}</section>`;
     if(target.useCase==='MMS')board='<section class="panel"><p class="hint">MMSは作業前後の写真を原本のまま記録します。黒板・座標・施工区間・調書は不要です。</p></section>';
-    else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false,{omitPoint:isTrial(target.useCase),fixedTS:target.useCase==='TS出来形(バリアフリー)'}),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id)});}
+    else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false,{omitPoint:isTrial(target.useCase),fixedTS:target.useCase==='TS出来形(バリアフリー)'}),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id),applyAll:applyBoardAll,scopeLabel:activeGroupId==='__all__'?'全路線':project.groups.find(g=>g.id===activeGroupId)?.name||'工事直下'});}
   }else selected=emptyState('記録対象を追加','用途と管理名を指定して登録します。施工区間は任意です。',{actions:button('記録対象を追加',{variant:'primary',attrs:{'data-action':'add-targets'}})});
   return `${renderCaptureProgress(summary)}<div class="capture-layout">${picker}<div class="capture-main">${selected}${record?renderFinishWork():''}${board}</div></div>${record?historyPanel(record.id):''}`;
 }
@@ -1101,8 +1175,11 @@ $('app').addEventListener('change', event => {
     const form = $('boardForm');
     const {target,record}=getContext(project,activeRecordId);
     const noteMode=event.target.name==='autoNote'?(event.target.checked?'auto':'manual'):(boardDrafts.get(activeRecordId)?.noteMode||recordNoteMode(target,record));
-    boardDrafts.set(activeRecordId, {...resolveCaptureBoard(project,activeRecordId,activeCaptureSlot,{board:readBoard(form),noteMode}),applyBoard:form.elements.applyBoard.checked}); dirty = true;invalidateOutput(); render(); return;
+    boardDrafts.set(activeRecordId, {...resolveCaptureBoard(project,activeRecordId,activeCaptureSlot,{board:readBoard(form),noteMode}),applyBoard:form.elements.applyBoard.checked}); dirty = true;invalidateOutput(); render();
+    if(event.target.name==='applyBoard'&&applyBoardAll)void run(()=>applyBoardToGroup(event.target.checked));
+    return;
   }
+  if(event.target.id==='applyBoardAll'){applyBoardAll=event.target.checked;const apply=$('boardForm')?.elements.applyBoard?.checked;if(applyBoardAll&&apply!==undefined)void run(()=>applyBoardToGroup(apply));else render();return;}
   if (event.target.id === 'groupSelect') { activeGroupId = event.target.value; activeTargetId = ''; activeRecordId = '';activeCaptureSlot=''; useCaseFilter = ''; render(); }
   if (event.target.id === 'useCaseFilter') { useCaseFilter = event.target.value; activeTargetId = ''; activeRecordId = ''; render(); }
   if(event.target.id==='onlyMissing'){onlyMissing=event.target.checked;render();}
@@ -1202,7 +1279,7 @@ function handleWorkspaceClick(event) {
     }
     if(button.dataset.action==='prepare-output'){run(prepareOutput);return;}
     if(button.dataset.action==='print-output'){void openPrintOutput().catch(error=>notify(error.message,true));return;}
-    if(button.dataset.action==='save-output-html'){requireSavedNames();if(outputState.prepared)download(outputState.prepared.blob,`${project.name}_${outputState.prepared.model.edition==='draft'?'途中版':'完成版'}_簡易調書写真帳.html`);return;}
+    if(button.dataset.action==='save-output-html'){requireSavedNames();const prepared=outputState.prepared;if(prepared)void currentOutputHTML(prepared).then(html=>download(new Blob([html],{type:'text/html'}),`${project.name}_${prepared.model.edition==='draft'?'途中版':'完成版'}_簡易調書写真帳.html`)).catch(error=>notify(error.message,true));return;}
     if (button.dataset.mode) { run(async()=>{await flushBoardDrafts(true);await flushReportDrafts(true);enterMode(button.dataset.mode);}); return; }
     if (button.dataset.target) { mode='field';useCaseFilter='';onlyMissing=false;activeTargetId = button.dataset.target; activeRecordId = '';activeCaptureSlot='';render(); return; }
     if (button.dataset.record) { activeRecordId = button.dataset.record;activeCaptureSlot=''; render(); return; }
@@ -1274,6 +1351,9 @@ function updateAppDialog() {
     intentionalReload=true;window.location.reload();
   },'保存して更新');
 }
+$('previewEdit').onclick=()=>setPreviewEditing(!previewEditing);
+$('previewPrint').onclick=()=>{void openPrintOutput().catch(error=>notify(error.message,true));};
+$('previewDialog').addEventListener('close',()=>setPreviewEditing(false));
 $('prepareOffline').onclick=()=>run(()=>offlineManager.prepare());
 $('checkUpdate').onclick=()=>run(()=>offlineManager.checkForUpdate());
 $('applyUpdate').onclick=updateAppDialog;

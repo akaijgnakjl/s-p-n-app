@@ -241,7 +241,7 @@ function drawReferenceBoard(ctx, x, y, width, height, board) {
     plan.lines.forEach((line, index) => ctx.fillText(line, tx, firstY + index * plan.lineHeight));
     ctx.restore();
   };
-  // 工事名・路線名は文字の高さを固定し、入らない行は横幅だけ縮める。改行がある時は全行が枠に入る高さにそろえる。
+  // 1行の欄（工事名・路線名・工種・撮影月日・位置など）は文字の高さを固定し、入らない行は横幅だけ縮める。改行がある時は全行が枠に入る高さにそろえる。
   const drawCondensed = (region, key) => {
     const text = boardText(key, board.values[key]).replace(/\r\n?/g, '\n');
     if (!text.trim()) return;
@@ -256,11 +256,8 @@ function drawReferenceBoard(ctx, x, y, width, height, board) {
     ctx.font = `${font}px sans-serif`;
     const tx = region.align === 'center' ? bx + bw / 2 : region.align === 'right' ? bx + bw : bx;
     const firstY = by + (bh - lines.length * lineHeight) / 2 + lineHeight / 2;
-    // fillTextの最大幅を渡すと、文字の高さはそのままで横幅だけ縮めて描かれる。
-    lines.forEach((line, index) => {
-      if (bw / Math.max(1, ctx.measureText(line).width) < 0.25) overflowFields.push(key);
-      ctx.fillText(line, tx, firstY + index * lineHeight, bw);
-    });
+    // fillTextの最大幅を渡すと、文字の高さはそのままで横幅だけ縮めて描かれる（どんなに長くても枠に入る）。
+    lines.forEach((line, index) => ctx.fillText(line, tx, firstY + index * lineHeight, bw));
     ctx.restore();
   };
   const tsRemarks=board.templateId==='sample-2112'&&board.values.workType==='縁石工'&&board.values.remarks===`路線名：${board.values.route}\n\n延長（偏心量）\n\n出来形計測状況`;
@@ -269,7 +266,7 @@ function drawReferenceBoard(ctx, x, y, width, height, board) {
       const lines=[`路線名：${board.values.route}`,'延長（偏心量）','出来形計測状況'];
       const bands=[[29,16],[55,16],[84,13]];
       lines.forEach((text,index)=>drawRegion({...region,y:bands[index][0],h:bands[index][1]},[key],text,true));
-    }else if(['job','route'].includes(key))drawCondensed(region,key);
+    }else if(!region.wrap)drawCondensed(region,key);
     else drawRegion(region, [key]);
   }
   if (layout.stack) drawRegion(layout.stack, layout.stack.keys);

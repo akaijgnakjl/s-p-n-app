@@ -205,6 +205,9 @@ dialog::backdrop, .ui-dialog::backdrop { background: rgb(32 38 48 / .32); }
 .preview-actions #zoomFit { min-width: 90px; }
 .preview-actions #zoomActual { min-width: 62px; }
 .preview-actions #closePreview { margin-left: var(--space-1); }
+/* 編集・印刷は調書・写真帳の全画面表示だけに出す。編集中はボタンの色で分かるようにする。 */
+.preview-dialog:not(.is-document) .preview-document-only { display: none; }
+.preview-actions #previewEdit[aria-pressed="true"] { border-color: var(--warning); background: var(--warning-soft); color: var(--text); font-weight: 700; }
 .zoom-fit-short { display: none; }
 #zoomLabel { display: inline-block; flex: 0 0 auto; min-width: 50px; color: var(--muted); font-size: var(--font-caption); font-variant-numeric: tabular-nums; line-height: 24px; text-align: center; }
 .preview-help { margin: 0; color: var(--muted); font-size: var(--font-caption); line-height: 1.6; }
@@ -362,6 +365,7 @@ footer span { color:var(--muted); font-size:var(--font-caption-small); }
   .preview-actions button { min-width: 0; }
   .preview-actions #zoomFit, .preview-actions #zoomActual { min-width: 0; }
   .preview-actions #closePreview { margin-left: 0; }
+  .preview-actions .preview-document-only { grid-column: span 3; }
   .preview-actions #zoomLabel { min-width: 0; }
   .zoom-fit-full { display: none; }
   .zoom-fit-short { display: inline; }

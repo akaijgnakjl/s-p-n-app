@@ -251,6 +251,26 @@ export function saveRecordBoard(project,recordId,board,{applyBoard=true,noteMode
   });
 }
 
+// 表示中の路線（'__all__'は全路線、null/''は工事直下）の採用写真と次の写真の「黒板を合成する」をまとめてそろえる。
+// MMSとTS出来形のスマホスクリーンショットは黒板を合成しないので変えない。戻り値は変えた採用写真の枚数。
+export function setGroupApplyBoard(project,groupId,applyBoard){
+  return changeProject(project,next=>{
+    let count=0;
+    for(const target of next.targets){
+      if(target.useCase==='MMS'||(groupId!=='__all__'&&target.groupId!==(groupId||null)))continue;
+      for(const record of target.records){
+        record.applyBoardDefault=applyBoard;
+        for(const slot of record.slots){
+          const photo=next.photos.find(photo=>photo.id===slot.activePhotoId);
+          if(!photo?.board||(target.useCase==='TS出来形(バリアフリー)'&&slot.name==='スマホスクリーンショット')||photo.applyBoard===applyBoard)continue;
+          replacePhotoBoard(photo,photo.board,applyBoard);count++;
+        }
+      }
+    }
+    return count;
+  });
+}
+
 export function savePhotoBoard(project,photoId,board,applyBoard){
   return changeProject(project,next=>{
     const photo=next.photos.find(photo=>photo.id===photoId);if(!photo)fail('写真が見つかりません。');
