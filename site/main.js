@@ -874,7 +874,7 @@ async function savePackage() {
   notify(`作業ZIPをダウンロードしました。保存先を確認してください。${persistenceIssue}`, Boolean(persistenceIssue));
 }
 
-function beginCapture(recordId, slotName, source) {
+function beginCapture(recordId, slotName, source, droppedFile = null) {
   if (busy) return;
   if(pendingPhoto){notify('未保存の写真があります。再試行か取消をしてください。',true);return;}
   if(project.photos.length>=LIMITS.photos||project.photos.reduce((sum,photo)=>sum+photo.size,0)>=LIMITS.totalBytes){notify(`上限（履歴込み${LIMITS.photos}枚・${formatByteLimit()}）に達しました。作業ZIPを保存してから写真を整理してください。`,true);return;}
@@ -898,6 +898,8 @@ function beginCapture(recordId, slotName, source) {
     openDialog('スマホスクリーンショットを貼り付け',`<div id="screenshotPasteArea" class="screenshot-paste-area" tabindex="0"><p>画像をコピーし、この枠でCtrl+Vを押してください。</p><p class="hint">${esc(context.target.name)}の右側に保存します。画像の加工や黒板の合成はしません。</p></div>`,()=>{},'閉じる');
     $('screenshotPasteArea').focus();return;
   }
+  // ドラッグ＆ドロップした画像は、ファイルを選んだ時と同じ流れで取り込む。
+  if(droppedFile){void receivePhoto({target:{files:[droppedFile]}});return;}
   const input=source==='camera'?$('cameraInput'):$('photoInput');input.value='';input.disabled=false;input.click();
 }
 
@@ -1232,6 +1234,27 @@ $('app').addEventListener('paste',event=>{
     const settings={recordIds:rows.map(c=>c.record.id),keys,startRow:Number(input.dataset.reportRow),startCol:Number(input.dataset.reportCol),text};
     try{showPastePreview(settings);}catch(error){pasteTextDialog(settings,text,error.message);}
   });
+});
+// 撮影枠への画像のドラッグ＆ドロップ。枠の外に落としてもブラウザーが画像を開いて作業中の画面を離れないようにする。
+const draggedFiles=event=>[...(event.dataTransfer?.types||[])].includes('Files');
+const clearDropTarget=()=>document.querySelectorAll('.slot-row.is-drop-target').forEach(element=>element.classList.remove('is-drop-target'));
+document.addEventListener('dragover',event=>{
+  if(!draggedFiles(event))return;
+  event.preventDefault();
+  const slot=event.target.closest?.('[data-drop-slot]');
+  event.dataTransfer.dropEffect=slot&&!busy?'copy':'none';
+  if(slot&&!slot.classList.contains('is-drop-target')){clearDropTarget();slot.classList.add('is-drop-target');}
+  if(!slot)clearDropTarget();
+});
+document.addEventListener('dragleave',event=>{if(draggedFiles(event)&&!event.relatedTarget)clearDropTarget();});
+document.addEventListener('drop',event=>{
+  if(!draggedFiles(event))return;
+  event.preventDefault();clearDropTarget();
+  const slot=event.target.closest?.('[data-drop-slot]');if(!slot)return;
+  const files=[...(event.dataTransfer.files||[])],file=files.find(item=>item.type.startsWith('image/'));
+  if(!file){notify('画像ファイル（JPEG・PNG・WebP）をドロップしてください。',true);return;}
+  if(files.length>1)notify('複数の画像は、最初の1枚だけを取り込みます。');
+  beginCapture(slot.dataset.recordId,slot.dataset.dropSlot,'file',file);
 });
 document.addEventListener('paste',event=>{
   if(busy||!event.target.closest('#screenshotPasteArea'))return;
