@@ -55,6 +55,21 @@ export function updateTarget(project, id, updates) {
   });
 }
 
+/** 複数の記録対象を、並び順どおりに貼り付けた名前へ一度に変更する（入れ替えも可）。 */
+export function renameTargets(project, ids, names) {
+  return changeProject(project, next => {
+    if (!Array.isArray(ids) || !ids.length) fail('名前を変更する記録対象を選択してください。');
+    if (!Array.isArray(names) || names.length !== ids.length) fail(`名前の数（${Array.isArray(names) ? names.length : 0}件）と選択した記録対象の数（${ids.length}件）が一致しません。`);
+    const targets = ids.map(id => next.targets.find(item => item.id === id) || fail('記録対象が見つかりません。'));
+    if (new Set(ids).size !== ids.length) fail('同じ記録対象が重複しています。');
+    targets.forEach((target, index) => { target.name = nameValue(names[index], `${index + 1}行目の${USE_CASES[target.useCase].nameLabel}`, 300); });
+    const seen = new Map();
+    for (const target of next.targets) { const key = `${target.groupId}\u0000${keyName(target.name.trim())}`; if (seen.has(key)) fail(`「${target.name}」が同じ路線で重複します。`); seen.set(key, target.id); }
+    for (const target of targets) for (const record of target.records) refreshRecordBoards(next, record.id, { photos: true });
+    return targets;
+  });
+}
+
 export function setRouteSection(project,groupId,section){
   return changeProject(project,next=>{
     const group=next.groups.find(item=>item.id===groupId);

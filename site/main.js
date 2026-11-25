@@ -1,4 +1,4 @@
-import { USE_CASES, LIMITS, createProject, addGroup, addTargets, addRecord, getContext, getSlotState, addPhoto, setSlotStatus, setActivePhoto, summarize, validateProject, upgradeProject } from './model.js';
+import { USE_CASES, LIMITS, createProject, addGroup, addTargets, parseNameList, addRecord, getContext, getSlotState, addPhoto, setSlotStatus, setActivePhoto, summarize, validateProject, upgradeProject } from './model.js';
 import {formatBytes,formatByteLimit} from './limits.js';
 import {thumbnailIsVisible} from './ui/visibility.js';
 import { validateImage, createThumbnail, drawBoard, composePhoto } from './images.js';
@@ -8,7 +8,7 @@ import { materialChoices } from './materials.js';
 import {exportPhotos} from './photo-export.js';
 import {readTSScreenshot} from './ts-screenshot.js';
 import {applyTSScreenshot} from './ts-screenshot-data.js';
-import {setRouteSection,describeTargetDeletion,deleteTargets,setTSCommonFields,TS_COMMON_KEYS,setTSStationNotation,setGroupApplyBoard} from './workflow.js';
+import {setRouteSection,describeTargetDeletion,deleteTargets,setTSCommonFields,TS_COMMON_KEYS,setTSStationNotation,setGroupApplyBoard,renameTargets} from './workflow.js';
 import {relinkBoardDrafts} from './board-link.js';
 import { openStorage } from './storage.js';
 import { exportWorkPackage, importWorkPackage, PACKAGE_LIMITS } from './package.js';
@@ -528,6 +528,22 @@ function tsStationDialog(groupId){
   $('editorForm').oninput=example;$('editorForm').onchange=example;example();
 }
 
+function renamePreviewHTML(targets,names){
+  const status=!names.length?'Excel等からコピーした名前を貼り付けてください。':names.length===targets.length?`${targets.length}件すべてに名前が対応しています。`:`名前が${names.length}件、選択した対象が${targets.length}件です。数を合わせてください。`;
+  return `<p class="hint keep${names.length&&names.length!==targets.length?' is-warning':''}">${esc(status)}</p><table class="rename-preview"><thead><tr><th scope="col">#</th><th scope="col">今の管理名</th><th scope="col">新しい管理名</th></tr></thead><tbody>${targets.map((target,index)=>`<tr><td>${index+1}</td><td>${esc(target.name)}</td><td>${names[index]===undefined?'<span class="hint keep">（未入力）</span>':esc(names[index])}</td></tr>`).join('')}${names.slice(targets.length).map((name,index)=>`<tr class="is-extra"><td>${targets.length+index+1}</td><td><span class="hint keep">（対象なし）</span></td><td>${esc(name)}</td></tr>`).join('')}</tbody></table>`;
+}
+function renameTargetsDialog(){
+  const targets=project.targets.filter(target=>selectedTargetIds.has(target.id)),ids=targets.map(target=>target.id);
+  if(!targets.length)throw new Error('名前を変更する記録対象を、一覧のチェックで選んでください。');
+  if(ids.some(id=>nameDrafts.has(id)))throw new Error('選択した対象に編集中の管理名があります。保存か取消をしてください。');
+  openDialog('管理名をまとめて変更',`<p class="dialog-note">選択した${targets.length}件を、上から順に貼り付けた名前へ変更します。Excel等の列をコピーして貼り付けてください（1行に1件。複数列のときは先頭列を使います）。</p><div class="dialog-fields">${textareaField('新しい管理名（1行に1件）',{name:'names',max:null,rows:8,attrs:{placeholder:'例：240R'}})}</div><div id="renamePreview" class="rename-preview-box">${renamePreviewHTML(targets,[])}</div><p class="hint">撮影済み写真の黒板の管理名も新しい名前に変わります。取消なら何も変わりません。</p>`,async data=>{
+    const names=parseNameList(data.get('names'));
+    await mutate(next=>renameTargets(next,ids,names),`${ids.length}件の管理名を変更しました。`,{clearNames:ids});
+    ids.forEach(id=>nameDrafts.delete(id));selectedTargetIds.clear();
+  },'名前を変更');
+  $('editorForm').oninput=()=>{const box=$('renamePreview');if(box)box.innerHTML=renamePreviewHTML(targets,parseNameList($('editorForm').elements.names.value));};
+}
+
 function targetDeleteDialog(ids){
   if(pendingPhoto)throw new Error('未保存の写真があります。再試行か取消をしてから削除してください。');
   const plan=describeTargetDeletion(project,ids);
@@ -729,11 +745,11 @@ function suggestedName(useCase, groupId) {
   return `${prefix}${index}`;
 }
 
-function targetRegistrationFields(useCase,groupId='',count=1,name='',category='',prefix,initialTemplate,material=''){
+function targetRegistrationFields(useCase,groupId='',count=1,name='',category='',prefix,initialTemplate,material='',nameList=''){
   const definition=USE_CASES[useCase],current=category||definition.categories[0],trial=isTrial(useCase);
   let suggested=trial?current:suggestedName(useCase,groupId);
   if(trial){let index=2;const names=new Set(project.targets.filter(t=>t.groupId===(groupId||null)).map(t=>t.name));while(names.has(suggested))suggested=`${current}${index++}`;}
-  const names=count===1?(trial?textField(definition.nameLabel,{name:'name',value:suggested,attrs:{readonly:true}}):field(definition.nameLabel,'name',name||suggested)):field('管理名の先頭部分','prefix',trial?current:(prefix??definition.prefix),{max:30,required:false});
+  const names=(count===1?(trial?textField(definition.nameLabel,{name:'name',value:suggested,attrs:{readonly:true}}):field(definition.nameLabel,'name',name||suggested)):field('管理名の先頭部分','prefix',trial?current:(prefix??definition.prefix),{max:30,required:false}))+nameListField(useCase,nameList);
   const materials=trial?selectField('材料',optionItems([['','材料を選択してください'],...materialChoices(useCase,current)],material),{name:'material',attrs:{required:true}}):'';
   return `${selectField('路線名',groupOptions(groupId),{name:'groupId',attrs:{required:true}})}${selectField(definition.categoryLabel,options(definition.categories,current),{name:'category'})}${textField('追加する数',{name:'count',type:'number',value:count,max:null,attrs:{min:1,max:2000,step:1}})}${names}${materials}${useCase==='MMS'?'<input type="hidden" name="initialTemplate" value=""><p class="hint">MMSは黒板なしです。</p>':selectField('黒板の初期形式',optionItems(Object.values(BOARD_TEMPLATES).filter(t=>t.id!=='legacy-simple').map(t=>[t.id,t.name]),initialTemplate||definition.defaultBoardTemplate),{name:'initialTemplate'})}${useCase!=='MMS'?'<section class="registration-board-preview"><strong>黒板のプレビュー</strong><canvas id="registrationBoardPreview" width="600" height="450" class="board-canvas" aria-label="黒板のプレビュー"></canvas><p id="registrationBoardStatus" class="hint"></p></section>':''}<p class="hint">選んだ路線に追加します。TSの右側画像はPCで指定します。</p>`;
 }
@@ -744,11 +760,20 @@ function drawRegistrationPreview(){
   try{
     if(!group)throw new Error('路線を選択してください。');
     const candidate=clone(project),count=Math.max(1,Math.min(2000,Number(form.elements.count.value)||1));
-    const [target]=addTargets(candidate,{useCase,groupId:group.id,count,name:form.elements.namedItem('name')?.value||'',prefix:form.elements.namedItem('prefix')?.value||'',category:form.elements.category.value,templateId:form.elements.initialTemplate.value});
+    const [target]=addTargets(candidate,{useCase,groupId:group.id,count,names:registrationNames(form),name:form.elements.namedItem('name')?.value||'',prefix:form.elements.namedItem('prefix')?.value||'',category:form.elements.category.value,templateId:form.elements.initialTemplate.value});
     const board=resolveCaptureBoard(candidate,target.records[0].id,target.records[0].slots[0].name).board;
     const result=drawBoard(canvas.getContext('2d'),0,0,canvas.width,canvas.height,board);
     $('registrationBoardStatus').textContent=result.overflow?'文字が枠に収まりません。入力を確認してください。':`${BOARD_TEMPLATES[board.templateId].name} ／ 項目名：${getReportItemName(candidate,target.records[0].id)}`;
   }catch(error){$('registrationBoardStatus').textContent=error.message;}
+}
+
+function registrationNames(form){return isTrial(form.elements.useCase.value)?[]:parseNameList(form.elements.namedItem('nameList')?.value);}
+function nameListField(useCase,value=''){return `<div id="registrationNameList" class="dialog-fields registration-name-list"${isTrial(useCase)?' hidden':''}>${textareaField('管理名を一覧で貼り付け（任意）',{name:'nameList',value,max:null,required:false,rows:5,attrs:{placeholder:'Excel等の列をコピーして貼り付け（1行に1件）'}})}<p id="registrationNameCount" class="hint keep">貼り付けると、行の数だけその名前で上から順に登録します（「追加する数」と管理名の入力は使いません）。</p></div>`;}
+function updateNameListHint(){
+  const form=$('editorForm'),hint=$('registrationNameCount'),box=$('registrationNameList');if(!form||!hint||!box)return;
+  box.hidden=isTrial(form.elements.useCase.value);
+  const names=registrationNames(form);
+  hint.textContent=names.length?`${names.length}件の名前を読み取りました。この${names.length}件を上から順に登録します（「追加する数」と管理名の入力は使いません）。`:'貼り付けると、行の数だけその名前で上から順に登録します（「追加する数」と管理名の入力は使いません）。';
 }
 
 function addTargetsDialog() {
@@ -757,7 +782,8 @@ function addTargetsDialog() {
   const groupId = project.groups.some(g=>g.id===activeGroupId)?activeGroupId:project.groups[0].id;
   openDialog('記録対象を追加', `<div class="dialog-fields">${selectField('用途',options(Object.keys(USE_CASES),initial),{name:'useCase'})}<div id="targetRegistration" class="dialog-fields">${targetRegistrationFields(initial,groupId)}</div></div><p class="hint">「現場写真」は準備中です。専用の登録・撮影・写真帳作成にはまだ対応していません。</p>`, async data => {
     if(!data.get('groupId'))throw new Error('路線を選択してください。');
-    const next=clone(project),targets=addTargets(next,{useCase:data.get('useCase'),groupId:data.get('groupId') || null,category:data.get('category'),name:data.get('name') || '',prefix:data.get('prefix') || '',count:Number(data.get('count')),templateId:data.get('initialTemplate')||undefined});
+    const listed=isTrial(data.get('useCase'))?[]:parseNameList(data.get('nameList'));
+    const next=clone(project),targets=addTargets(next,{useCase:data.get('useCase'),groupId:data.get('groupId') || null,category:data.get('category'),names:listed,name:data.get('name') || '',prefix:data.get('prefix') || '',count:Number(data.get('count')),templateId:data.get('initialTemplate')||undefined});
     if(isTrial(data.get('useCase')))for(const target of targets)target.records[0].reportFields.material=String(data.get('material')||'');
     validateSnapshot(next);
     openDialog('登録内容の確認',`<p class="step-hint">1 用途・管理名を指定 → <strong>2 内容を確認</strong></p><p>${esc(data.get('useCase'))} ／ ${esc(data.get('category'))} ／ ${esc(locationLabel(project.groups.find(g=>g.id===data.get('groupId'))))}</p><div class="registration-preview"><ul>${targets.map(target=>`<li>${esc(target.name)}</li>`).join('')}</ul></div><p class="hint">${targets.length}件を追加します。取消なら何も変わりません。</p>`,async()=>{
@@ -769,21 +795,21 @@ function addTargetsDialog() {
   let savedName = ''; let savedPrefix;let savedTemplate;
   $('editorForm').onchange = event => {
     const form = $('editorForm');
-    if (!['useCase','count','category','groupId'].includes(event.target.name)){drawRegistrationPreview();return;}
+    if (!['useCase','count','category','groupId'].includes(event.target.name)){updateNameListHint();drawRegistrationPreview();return;}
     const selectedGroup = form.elements.groupId.value;
     const count = Math.max(1,Math.min(2000,Number(form.elements.count.value)||1));
     const category = event.target.name === 'useCase' ? '' : form.elements.category.value;
-    const savedMaterial=['count','groupId'].includes(event.target.name)?form.elements.namedItem('material')?.value||'':'';
+    const savedMaterial=['count','groupId'].includes(event.target.name)?form.elements.namedItem('material')?.value||'':'',savedNameList=form.elements.namedItem('nameList')?.value||'';
     if (event.target.name === 'useCase'||event.target.name==='category') { savedName = ''; savedPrefix = undefined;savedTemplate=undefined; }
     else {
       if (form.elements.namedItem('name')) savedName = form.elements.name.value;
       if (form.elements.namedItem('prefix')) savedPrefix = form.elements.prefix.value;
       savedTemplate=form.elements.initialTemplate.value;
     }
-    $('targetRegistration').innerHTML = targetRegistrationFields(form.elements.useCase.value, selectedGroup, count, savedName, category, savedPrefix,savedTemplate,savedMaterial);
-    drawRegistrationPreview();
+    $('targetRegistration').innerHTML = targetRegistrationFields(form.elements.useCase.value, selectedGroup, count, savedName, category, savedPrefix,savedTemplate,savedMaterial,savedNameList);
+    updateNameListHint();drawRegistrationPreview();
   };
-  $('editorForm').oninput=()=>drawRegistrationPreview();
+  $('editorForm').oninput=()=>{updateNameListHint();drawRegistrationPreview();};
   drawRegistrationPreview();
 }
 
@@ -1279,6 +1305,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.action==='select-all-targets'){selection().visible.forEach(t=>selectedTargetIds.add(t.id));render();return;}
     if(button.dataset.action==='clear-target-selection'){selectedTargetIds.clear();render();return;}
     if(button.dataset.action==='delete-selected-targets'){targetDeleteDialog([...selectedTargetIds]);return;}
+    if(button.dataset.action==='rename-selected-targets'){renameTargetsDialog();return;}
     if(button.dataset.routeSection){routeSectionDialog(button.dataset.routeSection);return;}
     if(button.dataset.tsCommon){tsCommonDialog(button.dataset.tsCommon);return;}
     if(button.dataset.tsStation){tsStationDialog(button.dataset.tsStation);return;}

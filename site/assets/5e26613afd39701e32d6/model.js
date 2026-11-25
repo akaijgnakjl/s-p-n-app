@@ -148,13 +148,24 @@ export function upgradeProject(raw) {
   const result = { ...rest, schemaVersion: 2, appVersion: '0.2.0', groups, targets, photos }; validateProject(result); return result;
 }
 
-export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.9.14', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
+export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.9.15', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
 export function addGroup(project, { kind, name } = {}) {
   validateProject(project); if (!GROUP_KINDS.includes(kind)) fail('グループの種類を選択してください'); const value = inputName(name, 'グループ名'); if (project.groups.length >= LIMITS.groups) fail('グループは50以内にしてください'); if (project.groups.some(group => group.kind === kind && normalizedName(group.name.trim()) === normalizedName(value))) fail('同じ種類に同名のグループがあります');
   const group = { id: uid(), kind, name: value }; project.groups.push(group); project.updatedAt = now(); return group;
 }
-export function addTargets(project, { useCase, groupId = null, name = '', prefix = '', count = 1, category, templateId } = {}) {
-  validateProject(project); const definition = useCaseDefinition(useCase); if (groupId !== null && !project.groups.some(group => group.id === groupId)) fail('グループが見つかりません'); if (!Number.isSafeInteger(count) || count < 1 || project.targets.length + count > LIMITS.targets) fail('記録対象は工事全体で2000以内です。追加数は1以上にしてください');
+/** Excel等からコピーした名前一覧を1行1件で読む。タブ区切り（複数列）のときは先頭列だけを使い、空行は除く。 */
+export function parseNameList(value) {
+  return String(value ?? '').split(/\r\n|\r|\n/).map(line => line.split('\t')[0].trim()).filter(Boolean);
+}
+export function addTargets(project, { useCase, groupId = null, name = '', prefix = '', count = 1, category, templateId, names: listedNames } = {}) {
+  validateProject(project); const definition = useCaseDefinition(useCase);
+  if (Array.isArray(listedNames) && listedNames.length) {
+    if (groupId !== null && !project.groups.some(group => group.id === groupId)) fail('グループが見つかりません'); if (project.targets.length + listedNames.length > LIMITS.targets) fail('記録対象は工事全体で2000以内です');
+    const seen = new Set(project.targets.filter(target => target.groupId === groupId).map(target => normalizedName(target.name.trim()))), values = listedNames.map((item, index) => inputName(item, `${index + 1}行目の${definition.nameLabel}`));
+    for (const value of values) { const key = normalizedName(value); if (seen.has(key)) fail(`「${value}」は同じ路線に既にあるか、一覧の中で重複しています`); seen.add(key); }
+    const chosen = category ?? definition.categories[0];
+    const created = values.map(value => { const target = { id: uid(), name: value, useCase, groupId, records: [] }; target.records.push(makeRecord(project, target, chosen, templateId === undefined ? definition.defaultBoardTemplate : templateId)); return target; }); project.targets.push(...created); project.updatedAt = now(); return created;
+  } if (groupId !== null && !project.groups.some(group => group.id === groupId)) fail('グループが見つかりません'); if (!Number.isSafeInteger(count) || count < 1 || project.targets.length + count > LIMITS.targets) fail('記録対象は工事全体で2000以内です。追加数は1以上にしてください');
   const chosenCategory = category ?? definition.categories[0], existing = project.targets.filter(target => target.groupId === groupId); let names;
   if (count === 1) { const value = inputName(name, definition.nameLabel); if (existing.some(target => normalizedName(target.name.trim()) === normalizedName(value))) fail('同じグループに同名の記録対象があります'); names = [value]; }
   else {
