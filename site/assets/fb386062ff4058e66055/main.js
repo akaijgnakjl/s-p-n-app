@@ -922,7 +922,7 @@ function beginCapture(recordId, slotName, source, droppedFile = null) {
   const workDate=defaults?.value || dateToday();
   pendingCapture={projectId:project.id,recordId,slot:slotName,board,defaultBoard:board,tsBoard:screenshot?resolved.board:null,applyBoard,noteMode:resolved.noteMode,workDate,workDateStatus:'unconfirmed',source:source==='camera'?'camera':'library',paste:source==='paste'};
   if(source==='paste'){
-    openDialog('スマホスクリーンショットを貼り付け',`<div id="screenshotPasteArea" class="screenshot-paste-area" tabindex="0"><p>画像をコピーし、この枠でCtrl+Vを押してください。</p><p class="hint">${esc(context.target.name)}の右側に保存します。画像の加工や黒板の合成はしません。</p></div>`,()=>{},'閉じる');
+    openDialog('スマホスクリーンショットを貼り付け',`<div id="screenshotPasteArea" class="screenshot-paste-area" tabindex="0"><p>画像をコピーし、この枠でCtrl+Vを押すか、PNG・JPEG等の画像ファイルをこの枠へドラッグ＆ドロップしてください。</p><p class="hint">${esc(context.target.name)}の右側に保存します。画像の加工や黒板の合成はしません。</p></div>`,()=>{},'閉じる');
     $('screenshotPasteArea').focus();return;
   }
   // ドラッグ＆ドロップした画像は、ファイルを選んだ時と同じ流れで取り込む。
@@ -1264,11 +1264,11 @@ $('app').addEventListener('paste',event=>{
 });
 // 撮影枠への画像のドラッグ＆ドロップ。枠の外に落としてもブラウザーが画像を開いて作業中の画面を離れないようにする。
 const draggedFiles=event=>[...(event.dataTransfer?.types||[])].includes('Files');
-const clearDropTarget=()=>document.querySelectorAll('.slot-row.is-drop-target').forEach(element=>element.classList.remove('is-drop-target'));
+const clearDropTarget=()=>document.querySelectorAll('.slot-row.is-drop-target,.screenshot-paste-area.is-drop-target').forEach(element=>element.classList.remove('is-drop-target'));
 document.addEventListener('dragover',event=>{
   if(!draggedFiles(event))return;
   event.preventDefault();
-  const slot=event.target.closest?.('[data-drop-slot]');
+  const slot=event.target.closest?.('[data-drop-slot],#screenshotPasteArea');
   event.dataTransfer.dropEffect=slot&&!busy?'copy':'none';
   if(slot&&!slot.classList.contains('is-drop-target')){clearDropTarget();slot.classList.add('is-drop-target');}
   if(!slot)clearDropTarget();
@@ -1277,10 +1277,13 @@ document.addEventListener('dragleave',event=>{if(draggedFiles(event)&&!event.rel
 document.addEventListener('drop',event=>{
   if(!draggedFiles(event))return;
   event.preventDefault();clearDropTarget();
-  const slot=event.target.closest?.('[data-drop-slot]');if(!slot)return;
+  const pasteArea=event.target.closest?.('#screenshotPasteArea');
+  const slot=pasteArea||event.target.closest?.('[data-drop-slot]');if(!slot||busy)return;
   const files=[...(event.dataTransfer.files||[])],file=files.find(item=>item.type.startsWith('image/'));
   if(!file){notify('画像ファイル（JPEG・PNG・WebP）をドロップしてください。',true);return;}
   if(files.length>1)notify('複数の画像は、最初の1枚だけを取り込みます。');
+  // 「PCで画像を貼り付け」の枠へ落とした画像は、Ctrl+Vで貼り付けた時と同じ流れで保存する。
+  if(pasteArea){if(!pendingCapture)return;void receivePhoto({target:{files:[file]}}).then(()=>{if(!pendingPhoto&&$('editorDialog').open)$('editorDialog').close();});return;}
   beginCapture(slot.dataset.recordId,slot.dataset.dropSlot,'file',file);
 });
 document.addEventListener('paste',event=>{

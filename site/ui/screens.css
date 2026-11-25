@@ -295,7 +295,7 @@ main, body.has-project main { padding:var(--space-3); }
 @media(min-width:761px){.capture-layout>.record-target-list{top:calc(var(--workspace-nav-height,164px) + 12px);max-height:calc(100dvh - var(--workspace-nav-height,164px) - 24px)}}
 .finish-work-panel .finish-work-links { margin-top:var(--space-2); }
 .output-goto-list{margin:var(--space-2) 0 0;padding:0;list-style:none}.output-goto-list li{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);padding:var(--space-1) 0;border-top:1px solid var(--border)}.output-goto-list li>span{min-width:0;overflow-wrap:anywhere}.output-goto-list .output-goto{flex:0 0 auto}
-/* 撮影枠へ画像をドラッグ中は枠を強調する。タッチ端末ではドロップの案内を出さない。 */.slot-row.is-drop-target{outline:3px dashed var(--brand);outline-offset:3px;background:var(--brand-soft)}.slot-drop-hint{margin-top:var(--space-1);font-size:12px}@media (hover:none){.slot-drop-hint{display:none}}
+/* 撮影枠へ画像をドラッグ中は枠を強調する。タッチ端末ではドロップの案内を出さない。 */.slot-row.is-drop-target{outline:3px dashed var(--brand);outline-offset:3px;background:var(--brand-soft)}#screenshotPasteArea.is-drop-target{border-color:var(--brand);border-style:solid;background:var(--brand-soft);box-shadow:0 0 0 3px var(--brand-soft)}.slot-drop-hint{margin-top:var(--space-1);font-size:12px}@media (hover:none){.slot-drop-hint{display:none}}
 
 /* 管理名の一括変更：今の名前と新しい名前の対応表 */
 .rename-preview-box{max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--soft)}
