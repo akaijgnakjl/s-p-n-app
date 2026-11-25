@@ -25,4 +25,4 @@ export const GROUP_KINDS = Object.freeze(['路線', '工区', '施工箇所', '�
 /** 端末間で共通にする暫定上限。実機メモリ性能の保証値ではない。 */
 export const LIMITS = Object.freeze({ photos: 500, totalBytes: 1_000_000_000, imageBytes: 20 * 1024 * 1024, pixels: 40_000_000, side: 16_000, targets: 2000, groups: 50 });
 /** 保持上限と独立した、1回の簡易帳票に埋め込める採用写真の上限。 */
-export const OUTPUT_LIMITS = Object.freeze({ embeddedPhotos: 100, embeddedBytes: 96 * 1024 * 1024 });
+export const OUTPUT_LIMITS = Object.freeze({ embeddedPhotos: 500, embeddedBytes: 480 * 1024 * 1024 });
