@@ -6,8 +6,8 @@ import { BOARD_TEMPLATES, BOARD_FIELD_KEYS, createBoard, boardAspectRatio } from
 import { loadBoardImages } from './board-assets.js';
 import { materialChoices } from './materials.js';
 import {exportPhotos} from './photo-export.js';
-import {readTSScreenshot} from './ts-screenshot.js';
-import {applyTSScreenshot} from './ts-screenshot-data.js';
+import {readTSScreenshot,createTSReader,tsStationPreview} from './ts-screenshot.js';
+import {applyTSScreenshot,matchTSTarget} from './ts-screenshot-data.js';
 import {setRouteSection,describeTargetDeletion,deleteTargets,setTSCommonFields,TS_COMMON_KEYS,setTSStationNotation,setGroupApplyBoard,renameTargets} from './workflow.js';
 import {relinkBoardDrafts} from './board-link.js';
 import { openStorage } from './storage.js';
@@ -545,6 +545,87 @@ function renameTargetsDialog(scope='selected'){
   $('editorForm').oninput=()=>{const box=$('renamePreview');if(box)box.innerHTML=renamePreviewHTML(targets,parseNameList($('editorForm').elements.names.value));};
 }
 
+// TS出来形のスマホスクリーンショットをまとめて取り込み、読み取った計測箇所と同じ管理名の記録対象へ振り分ける。
+let tsBatch=null;
+function tsBatchTargets(){return selection().visible.filter(target=>target.useCase==='TS出来形(バリアフリー)');}
+function tsBatchRowHTML(row,index,targets,counts){
+  const slotTaken=target=>target.records[0]?.slots.find(slot=>slot.name==='スマホスクリーンショット')?.status==='taken';
+  const read=row.status==='reading'?'<span class="hint keep">読み取り中…</span>':row.status==='waiting'?'<span class="hint keep">順番待ち</span>':row.status==='error'?`<span class="ts-batch-error">${esc(row.error)}</span>`:`<strong>${esc(row.text||'読み取れません')}</strong><small>X=${esc(row.result?.values?.x??'—')} ／ Y=${esc(row.result?.values?.y??'—')}</small>`;
+  const state=!row.targetId?(row.status==='done'||row.status==='error'?'<span class="ts-batch-state is-warning">振り分け先を選んでください（選ばなければ取り込みません）</span>':''):counts.get(row.targetId)>1?'<span class="ts-batch-state is-warning">同じ振り分け先が重複しています</span>':row.match==='certain'?'<span class="ts-batch-state is-ok">管理名と一致</span>':row.match==='candidate'?'<span class="ts-batch-state is-warning">候補から一致・画像と見比べてください</span>':'<span class="ts-batch-state">手で選択</span>';
+  const options=`<option value="">取り込まない</option>${targets.map(target=>`<option value="${esc(target.id)}"${row.targetId===target.id?' selected':''}>${esc(target.name)}${slotTaken(target)?'（取込済み・置き換え）':''}</option>`).join('')}`;
+  return `<tr data-ts-batch-row="${index}"><td class="ts-batch-thumb">${row.url?`<img src="${esc(row.url)}" alt="${esc(row.file.name)}">`:''}</td><td><span class="ts-batch-file">${esc(row.file.name)}</span>${row.preview?`<img class="ts-batch-station" src="${esc(row.preview)}" alt="計測箇所の欄">`:''}</td><td class="ts-batch-read">${read}</td><td><select data-ts-batch-target="${index}" aria-label="${esc(row.file.name)}の振り分け先"${row.status==='reading'||row.status==='waiting'?' disabled':''}>${options}</select>${state}</td></tr>`;
+}
+function renderTSBatch(){
+  if(!tsBatch||!$('tsBatchRows'))return;
+  const targets=tsBatchTargets(),counts=new Map();for(const row of tsBatch.rows)if(row.targetId)counts.set(row.targetId,(counts.get(row.targetId)||0)+1);
+  $('tsBatchRows').innerHTML=tsBatch.rows.map((row,index)=>tsBatchRowHTML(row,index,targets,counts)).join('');
+  const done=tsBatch.rows.filter(row=>row.status==='done'||row.status==='error').length,assigned=tsBatch.rows.filter(row=>row.targetId).length,auto=tsBatch.rows.filter(row=>row.match==='certain'&&row.targetId).length;
+  $('tsBatchSummary').textContent=tsBatch.rows.length?`${tsBatch.rows.length}枚中 ${done}枚を読み取りました。振り分け先 ${assigned}枚（管理名と一致 ${auto}枚）。${[...counts.values()].some(count=>count>1)?'同じ振り分け先が重複しています。':''}`:'まだ画像がありません。';
+  $('tsBatchTable').hidden=!tsBatch.rows.length;
+}
+async function processTSBatch(){
+  if(!tsBatch||tsBatch.running)return;const batch=tsBatch;batch.running=true;
+  try{
+    while(batch===tsBatch){
+      const row=batch.rows.find(item=>item.status==='waiting');if(!row)break;
+      row.status='reading';renderTSBatch();
+      try{
+        batch.reader||=await createTSReader();
+        row.preview=await tsStationPreview(row.file);
+        row.result=await batch.reader.read(row.file);
+        const match=matchTSTarget(tsBatchTargets(),row.result);
+        const station=row.result.values?.station;row.text=station?`${station.station}${station.side}`:match.text?`${match.text}（候補）`:'';
+        if(match.target&&!batch.rows.some(other=>other!==row&&other.targetId===match.target.id)){row.targetId=match.target.id;row.match=match.certain?'certain':'candidate';}
+        if(row.result.message)row.error=row.result.message;
+        row.status='done';
+      }catch(error){row.status='error';row.error=error.message||'読み取れませんでした。';row.result={complete:false,values:{},missing:['X','Y','計測箇所']};}
+      renderTSBatch();
+    }
+  }finally{batch.running=false;if(batch!==tsBatch||!batch.rows.some(row=>row.status==='waiting')){await batch.reader?.close();batch.reader=null;}}
+}
+function addTSBatchFiles(fileList){
+  if(!tsBatch)return;
+  const files=[...fileList],images=files.filter(file=>/^image\/(png|jpeg|webp)$/.test(file.type));
+  if(files.length>images.length)notify(`画像ファイル（PNG・JPEG・WebP）以外の${files.length-images.length}件は取り込みません。`,true);
+  for(const file of images)tsBatch.rows.push({file,url:URL.createObjectURL(file),status:'waiting',targetId:'',match:''});
+  renderTSBatch();void processTSBatch();
+}
+function closeTSBatch(batch=tsBatch){if(!batch||batch.closed)return;batch.closed=true;if(tsBatch===batch)tsBatch=null;for(const row of batch.rows)if(row.url)URL.revokeObjectURL(row.url);if(!batch.running)void batch.reader?.close();}
+async function saveTSBatch(rows){
+  const entries=rows.filter(row=>row.targetId);
+  if(!entries.length)throw new Error('振り分け先を選んだ画像がありません。');
+  const ids=entries.map(row=>row.targetId);if(new Set(ids).size!==ids.length)throw new Error('同じ記録対象へ2枚以上を振り分けています。1枚にしてください。');
+  if(project.photos.length+entries.length>LIMITS.photos||project.photos.reduce((sum,photo)=>sum+photo.size,0)+entries.reduce((sum,row)=>sum+row.file.size,0)>LIMITS.totalBytes)throw new Error(`上限（履歴込み${LIMITS.photos}枚・原本合計${formatByteLimit()}）を超えるため、取り込んでいません。`);
+  showProgress(`スクリーンショット${entries.length}枚を保存中…`);
+  const next=clone(project),files=new Map(originals),recordIds=[],reportKeys=[];
+  for(const row of entries){
+    const target=next.targets.find(item=>item.id===row.targetId);if(!target)throw new Error('振り分け先の記録対象が見つかりません。');
+    const record=target.records[0],dimensions=await validateImage(row.file);
+    const effect=applyTSScreenshot(next,record.id,row.result||{values:{}});
+    const photo=addPhoto(next,record.id,'スマホスクリーンショット',{originalName:row.file.name,type:row.file.type,size:row.file.size,...dimensions,board:null,applyBoard:false,workDate:record.workDateDefault?.value||dateToday(),workDateStatus:'unconfirmed',captureSource:'library'});
+    files.set(photo.id,row.file);recordIds.push(record.id);reportKeys.push(...effect.keys.map(key=>`${record.id}:${key}`));
+  }
+  next.updatedAt=new Date().toISOString();
+  await persist(next,files,false,null,{clearBoardIds:recordIds,clearReportKeys:reportKeys});
+  project=next;originals=files;dirty=true;invalidateOutput();recordIds.forEach(id=>boardDrafts.delete(id));reportKeys.forEach(key=>reportDrafts.delete(key));
+  notify(`スクリーンショット${entries.length}枚を振り分けて保存しました。X・Y・計測箇所は調書入力で確認してください。`);
+}
+function tsBatchDialog(){
+  if(pendingPhoto)throw new Error('未保存の写真があります。再試行か取消をしてから取り込んでください。');
+  const targets=tsBatchTargets();if(!targets.length)throw new Error('表示中の路線にTS出来形の記録対象がありません。');
+  closeTSBatch();const batch={rows:[],reader:null,running:false,closed:false};tsBatch=batch;
+  openDialog('スクリーンショットをまとめて取り込む',`<p class="dialog-note">表示中のTS出来形 ${targets.length}件（${esc(scopeLabel())}）へ振り分けます。各画像の計測箇所（測点名）を読み取り、同じ管理名の記録対象を自動で選びます。切り出した計測箇所の欄と管理名を見比べ、違う時は振り分け先を選び直してください。</p><div id="tsBatchDrop" class="ts-batch-drop" tabindex="0"><p><strong>スクリーンショットをここへまとめてドラッグ＆ドロップ</strong></p><p class="hint keep">または ${button('画像を選ぶ',{id:'tsBatchPick'})}（複数選べます）</p><input id="tsBatchInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden></div><p id="tsBatchSummary" class="hint keep" aria-live="polite"></p><div class="ts-batch-table-box"><table id="tsBatchTable" class="ts-batch-table" hidden><thead><tr><th scope="col">画像</th><th scope="col">ファイル・計測箇所の欄</th><th scope="col">読み取り</th><th scope="col">振り分け先</th></tr></thead><tbody id="tsBatchRows"></tbody></table></div><p class="hint">読み取りはこの端末の中だけで行います。取込済みの対象へ振り分けると、新しい画像を採用し前の画像は履歴に残ります。X・Y・計測箇所は調書へ入り、確認済みは外れます。</p>`,async()=>{
+    if(batch.closed||!batch.rows.length)throw new Error('取り込む画像がありません。スクリーンショットをドラッグ＆ドロップするか「画像を選ぶ」で追加してください。');
+    if(batch.rows.some(row=>row.status==='waiting'||row.status==='reading'))throw new Error('まだ読み取り中です。終わってから取り込んでください。');
+    await saveTSBatch(batch.rows);closeTSBatch(batch);
+  },'振り分けて取り込む');
+  renderTSBatch();
+  $('tsBatchPick').onclick=()=>$('tsBatchInput').click();
+  $('tsBatchInput').onchange=event=>{addTSBatchFiles(event.target.files);event.target.value='';};
+  $('editorForm').onchange=event=>{const index=event.target.dataset?.tsBatchTarget;if(index===undefined||!tsBatch)return;const row=tsBatch.rows[Number(index)];row.targetId=event.target.value;row.match=row.targetId?'manual':'';renderTSBatch();};
+  $('editorDialog').addEventListener('close',()=>closeTSBatch(batch),{once:true});
+}
+
 function targetDeleteDialog(ids){
   if(pendingPhoto)throw new Error('未保存の写真があります。再試行か取消をしてから削除してください。');
   const plan=describeTargetDeletion(project,ids);
@@ -1000,7 +1081,7 @@ function captureView({group,target,record,visible}){
   if(record){
     const def=USE_CASES[target.useCase],remaining=def.categories.filter(c=>!target.records.some(r=>r.category===c));
     const tabs=record=>tabBar(target.records.map(r=>tabButton(`${def.categoryLabel}：${r.category}`,{selected:r.id===record.id,attrs:{'data-record':r.id}})).join('')+(remaining.length?button(`＋ ${def.categoryLabel}の記録を追加`,{className:'add-record',attrs:{'data-action':'add-record'}}):''),{label:def.categoryLabel,className:'record-tabs'});
-    selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title${nameDrafts.has(target.id)?' is-editing':''}">${inlineTargetName(target)}${badge(target.useCase)}${button('管理名・所属を訂正',{variant:'subtle',attrs:{'data-edit-target':target.id}})}${button(`管理名をまとめて変更（${visible.length}件）`,{variant:'subtle',attrs:{'data-action':'rename-visible-targets',title:'表示中の記録対象の管理名を、Excel等からの貼り付けでまとめて変更します'}})}</div>${renderTargetNavigation(visible,target.id,{placement:'top'})}<p class="hint keep">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">区分を確認してから写真の種類を選んでください。</p>${tabs(record)}${target.useCase==='TS出来形(バリアフリー)'?renderTSReading(record):''}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div>${renderTargetNavigation(visible,target.id,{placement:'bottom'})}</section>`;
+    selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title${nameDrafts.has(target.id)?' is-editing':''}">${inlineTargetName(target)}${badge(target.useCase)}${button('管理名・所属を訂正',{variant:'subtle',attrs:{'data-edit-target':target.id}})}${button(`管理名をまとめて変更（${visible.length}件）`,{variant:'subtle',attrs:{'data-action':'rename-visible-targets',title:'表示中の記録対象の管理名を、Excel等からの貼り付けでまとめて変更します'}})}${target.useCase==='TS出来形(バリアフリー)'?button('スクリーンショットをまとめて取り込む',{variant:'subtle',attrs:{'data-action':'batch-ts-screenshots',title:'複数のスクリーンショットの計測箇所を読み取り、同じ管理名の記録対象へ振り分けます'}}):''}</div>${renderTargetNavigation(visible,target.id,{placement:'top'})}<p class="hint keep">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">区分を確認してから写真の種類を選んでください。</p>${tabs(record)}${target.useCase==='TS出来形(バリアフリー)'?renderTSReading(record):''}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div>${renderTargetNavigation(visible,target.id,{placement:'bottom'})}</section>`;
     if(target.useCase==='MMS')board='<section class="panel"><p class="hint">MMSは作業前後の写真を原本のまま記録します。黒板・座標・施工区間・調書は不要です。</p></section>';
     else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false,{omitPoint:isTrial(target.useCase),fixedTS:target.useCase==='TS出来形(バリアフリー)'}),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id),applyAll:applyBoardAll,scopeLabel:activeGroupId==='__all__'?'全路線':project.groups.find(g=>g.id===activeGroupId)?.name||'工事直下'});}
   }else selected=emptyState('記録対象を追加','用途と管理名を指定して登録します。施工区間は任意です。',{actions:button('記録対象を追加',{variant:'primary',attrs:{'data-action':'add-targets'}})});
@@ -1264,11 +1345,11 @@ $('app').addEventListener('paste',event=>{
 });
 // 撮影枠への画像のドラッグ＆ドロップ。枠の外に落としてもブラウザーが画像を開いて作業中の画面を離れないようにする。
 const draggedFiles=event=>[...(event.dataTransfer?.types||[])].includes('Files');
-const clearDropTarget=()=>document.querySelectorAll('.slot-row.is-drop-target,.screenshot-paste-area.is-drop-target').forEach(element=>element.classList.remove('is-drop-target'));
+const clearDropTarget=()=>document.querySelectorAll('.is-drop-target').forEach(element=>element.classList.remove('is-drop-target'));
 document.addEventListener('dragover',event=>{
   if(!draggedFiles(event))return;
   event.preventDefault();
-  const slot=event.target.closest?.('[data-drop-slot],#screenshotPasteArea');
+  const slot=event.target.closest?.('[data-drop-slot],#screenshotPasteArea,#tsBatchDrop');
   event.dataTransfer.dropEffect=slot&&!busy?'copy':'none';
   if(slot&&!slot.classList.contains('is-drop-target')){clearDropTarget();slot.classList.add('is-drop-target');}
   if(!slot)clearDropTarget();
@@ -1277,6 +1358,7 @@ document.addEventListener('dragleave',event=>{if(draggedFiles(event)&&!event.rel
 document.addEventListener('drop',event=>{
   if(!draggedFiles(event))return;
   event.preventDefault();clearDropTarget();
+  const batchArea=event.target.closest?.('#tsBatchDrop');if(batchArea){addTSBatchFiles(event.dataTransfer.files||[]);return;}
   const pasteArea=event.target.closest?.('#screenshotPasteArea');
   const slot=pasteArea||event.target.closest?.('[data-drop-slot]');if(!slot||busy)return;
   const files=[...(event.dataTransfer.files||[])],file=files.find(item=>item.type.startsWith('image/'));
@@ -1311,6 +1393,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.action==='delete-selected-targets'){targetDeleteDialog([...selectedTargetIds]);return;}
     if(button.dataset.action==='rename-selected-targets'){renameTargetsDialog();return;}
     if(button.dataset.action==='rename-visible-targets'){renameTargetsDialog('visible');return;}
+    if(button.dataset.action==='batch-ts-screenshots'){tsBatchDialog();return;}
     if(button.dataset.routeSection){routeSectionDialog(button.dataset.routeSection);return;}
     if(button.dataset.tsCommon){tsCommonDialog(button.dataset.tsCommon);return;}
     if(button.dataset.tsStation){tsStationDialog(button.dataset.tsStation);return;}

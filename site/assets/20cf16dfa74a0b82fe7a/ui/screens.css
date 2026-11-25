@@ -305,3 +305,25 @@ main, body.has-project main { padding:var(--space-3); }
 .rename-preview tr.is-extra td{color:var(--warning)}
 .rename-preview-box .hint.is-warning{color:var(--warning);font-weight:600}
 .registration-name-list textarea{min-height:6.5em}
+
+/* スクリーンショットのまとめて取込：画像・計測箇所の欄・読取値・振り分け先を1行で見比べる */
+#editorDialog:has(.ts-batch-drop){width:min(1000px,calc(100vw - 24px));max-width:none}
+.ts-batch-drop{display:grid;gap:4px;place-items:center;padding:18px 12px;border:2px dashed var(--border);border-radius:10px;background:var(--soft);text-align:center}
+.ts-batch-drop p{margin:0}
+.ts-batch-drop.is-drop-target{border-color:var(--brand);border-style:solid;background:var(--brand-soft)}
+.ts-batch-table-box{max-height:min(52vh,560px);overflow:auto;border:1px solid var(--border);border-radius:8px}
+.ts-batch-table-box:has(table[hidden]){display:none}
+.ts-batch-table{width:100%;border-collapse:collapse;font-size:13px}
+.ts-batch-table th{position:sticky;top:0;z-index:1;background:var(--paper);text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+.ts-batch-table td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+.ts-batch-thumb{width:56px}
+.ts-batch-thumb img{display:block;width:48px;height:auto;border:1px solid var(--border);border-radius:4px}
+.ts-batch-file{display:block;max-width:240px;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.ts-batch-station{display:block;width:220px;max-width:100%;height:auto;margin-top:4px;border:1px solid var(--border);border-radius:4px;background:#fff}
+.ts-batch-read strong{display:block;font-size:16px;letter-spacing:.02em}
+.ts-batch-read small{display:block;color:var(--muted);white-space:nowrap}
+.ts-batch-table select{min-width:150px;max-width:220px}
+.ts-batch-state{display:block;margin-top:4px;font-size:12px;color:var(--muted)}
+.ts-batch-state.is-ok{color:var(--success,#2e7d4f);font-weight:600}
+.ts-batch-state.is-warning,.ts-batch-error{color:var(--warning);font-weight:600}
+@media(max-width:760px){.ts-batch-station{width:150px}.ts-batch-table select{min-width:120px}}
