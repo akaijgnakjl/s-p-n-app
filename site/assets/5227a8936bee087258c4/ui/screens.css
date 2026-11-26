@@ -274,6 +274,7 @@ main, body.has-project main { padding:var(--space-3); }
 .board-choice.selected { border:1px solid var(--brand); background:var(--brand-soft); }
 .board-choice--readonly { border:1px solid var(--border); border-radius:var(--control-radius); }
 .sub-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--space-2); margin-bottom:var(--space-3); }
+.sub-toolbar-start { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-2); min-width:0; }
 /* 使い方：右側に目立つ枠付きボタン。押すと絵入りの手順を表示する。 */
 .guide-trigger { display:inline-flex; align-items:center; gap:8px; margin-left:auto; border:2px solid var(--brand); background:var(--paper); color:var(--brand-hover); font-weight:700; }
 .guide-icon { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--brand); color:#fff; font-size:13px; line-height:1; }

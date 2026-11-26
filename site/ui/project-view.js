@@ -4,7 +4,7 @@ import {escapeHTML as esc,button,actions,actionBlock,disclosure,panelHeading,tab
 
 // お試し中の帯。工事名・作業日を決めずに使え、作業ZIPの保存は求めない。本番の工事にするか、削除して終わる。
 export function renderTrialBanner(){
-  return `<section class="trial-banner" role="status"><div><strong>お試し中</strong><span>工事を作らずに、作成・削除を自由に試せます。作業ZIPへの保存は不要です（この端末にだけ一時保存）。</span></div>${actions(button('本番の工事にする',{variant:'primary',attrs:{'data-action':'convert-trial'}})+button('お試しを削除して終わる',{variant:'danger',attrs:{'data-action':'end-trial'}}),{className:'trial-banner-actions'})}</section>`;
+  return `<section class="trial-banner" role="status"><div><strong>お試し中</strong><span>工事を作らずに、作成・削除を自由に試せます。作業ZIPへの保存は不要です（この端末にだけ一時保存）。</span></div>${actions(button('本番の工事にする',{variant:'primary',attrs:{'data-action':'convert-trial'}})+button('お試しを削除して最初に戻る',{variant:'danger',attrs:{'data-action':'end-trial'}}),{className:'trial-banner-actions'})}</section>`;
 }
 export function renderProjectHeader({name,trial=false,storageAvailable,zipDirty,mode,groups,activeGroupId,progressHTML=''}){
   const status=trial?'お試し（作業ZIPの保存は不要）':zipDirty?'作業ZIPに未保存の変更あり':'作業ZIPと同じ内容';

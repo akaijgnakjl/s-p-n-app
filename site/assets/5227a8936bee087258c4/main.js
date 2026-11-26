@@ -163,6 +163,8 @@ function updateDisabled() {
   $('exportPackage').disabled = busy || !project;
   // ZIP受け渡しでは保存の入口を「作業の終了」だけにする。
   $('exportPackage').hidden = Boolean(project) && mode==='handoff';
+  // お試し中だけ「お試しを削除して最初に戻る」を出す。
+  $('endTrialQuick').hidden = project?.trial!==true;
   $('cancelOperation').disabled=!activeOperation;
   $('cancelOperation').hidden=!activeOperation;
 }
@@ -411,7 +413,7 @@ function clearWork(message){
 }
 function endTrialDialog(){
   if(pendingPhoto)throw new Error('未保存の写真があります。再試行か取消をしてから終了してください。');
-  openDialog('お試しを削除して終わる',`<p class="dialog-note">お試しの内容（対象${project.targets.length}件・写真${project.photos.length}枚）をこの端末から消去し、最初の画面に戻ります。消した内容は元に戻せません。残したい場合は「本番の工事にする」を使ってください。</p>`,()=>clearWork('お試しを削除しました。'),'削除して終わる');
+  openDialog('お試しを削除して最初に戻る',`<p class="hint keep"><strong>本当に最初の画面に戻りますか？</strong></p><p class="dialog-note">お試しの内容（対象${project.targets.length}件・写真${project.photos.length}枚）をこの端末から消去し、工事を作る最初の画面に戻ります。消した内容は元に戻せません。残したい場合は「本番の工事にする」を使ってください。</p>`,async()=>{await clearWork('お試しを削除して、最初の画面に戻りました。');mode='field';activeGroupId='';activeTargetId='';activeRecordId='';selectedTargetIds.clear();window.scrollTo(0,0);},'削除して最初に戻る');
 }
 function convertTrialDialog(reason=''){
   const route=project.groups.find(group=>group.kind==='路線'&&group.name===TRIAL_ROUTE),hasPhotos=project.photos.length>0;
@@ -1005,7 +1007,7 @@ function showImportReview(data) {
   const same = bundleId === data.bundleId; const counts = summarize(data.project);
   const uses = [...new Set(data.project.targets.map(item => item.useCase))].join('・');
   openDialog('読み込む作業の確認', `<div class="dialog-fields">${panelHeading(data.project.name,{eyebrow:'WORK PACKAGE',level:3})}<p>${data.project.targets.length}記録対象・${counts.records}記録・原本${data.project.photos.length}枚<br>用途：${esc(uses || '未登録')}<br>${data.project.groups.length ? `路線${data.project.groups.length}件` : '路線なし'}</p><p class="dialog-note">${same ? '前回と同じZIPです。' : ''}${project ? '今の作業から切り替えます。先に作業ZIPを保存してください。' : '検証が完了しました。'} 写真の自動追加や統合はしません。</p></div>`, async () => {
-    await replaceWork(data.project, data.originals, data.bundleId||null); mode = 'organize';
+    await replaceWork(data.project, data.originals, data.bundleId||null); mode = 'field';
     notify(`作業ZIPを開きました（原本${data.project.photos.length}枚）。`);
   }, '開く');
 }
@@ -1296,6 +1298,8 @@ previewViewer=createPreviewViewer({onDocumentMove:frame=>{outputState.ready=fals
 
 $('newProject').onclick = newProjectDialog;
 $('openPackage').onclick = () => { $('workMenu').open=false;$('packageInput').value = ''; $('packageInput').click(); };
+$('openPackageQuick').onclick = () => { $('packageInput').value = ''; $('packageInput').click(); };
+$('endTrialQuick').onclick = () => { if(project?.trial===true)endTrialDialog(); };
 $('exportPackage').onclick = () => run(savePackage);
 $('cancelOperation').onclick=()=>{if(activeOperation){activeOperation.abort();$('cancelOperation').disabled=true;showProgress('取り消し中…');}};
 $('closeDialog').onclick = $('cancelDialog').onclick = () => $('editorDialog').close();
