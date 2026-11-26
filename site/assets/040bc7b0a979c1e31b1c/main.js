@@ -416,8 +416,9 @@ function endTrialDialog(){
   openDialog('お試しを削除して最初に戻る',`<p class="hint keep"><strong>本当に最初の画面に戻りますか？</strong></p><p class="dialog-note">お試しの内容（対象${project.targets.length}件・写真${project.photos.length}枚）をこの端末から消去し、工事を作る最初の画面に戻ります。消した内容は元に戻せません。残したい場合は「本番の工事にする」を使ってください。</p>`,async()=>{await clearWork('お試しを削除して、最初の画面に戻りました。');mode='field';activeGroupId='';activeTargetId='';activeRecordId='';selectedTargetIds.clear();window.scrollTo(0,0);},'削除して最初に戻る');
 }
 function convertTrialDialog(reason=''){
-  const route=project.groups.find(group=>group.kind==='路線'&&group.name===TRIAL_ROUTE),hasPhotos=project.photos.length>0;
-  openDialog('本番の工事にする',`${reason?`<p class="dialog-note">${esc(reason)}</p>`:''}<p class="hint keep">お試しで作った記録対象・写真・黒板・調書をそのまま使い、通常の工事にします。この後は作業ZIPに保存できます。</p><div class="dialog-fields">${field('工事名','name','',{max:100})}${route?field('路線名（「お試し路線」の名前を変えます）','routeName','',{max:300}):''}${field('作業日','workDate',currentWorkDate(),{type:'date'})}${hasPhotos?checkbox('撮影済みの写真の作業日と黒板の「撮影月日」もこの日付にする',{name:'applyPhotos',checked:true}):''}</div>`,async data=>{
+  // 作業ZIPをお試しとして開いた工事は、工事名を引き継ぎ、撮影済み写真の日付は初期では変えない。
+  const route=project.groups.find(group=>group.kind==='路線'&&group.name===TRIAL_ROUTE),hasPhotos=project.photos.length>0,imported=project.name!=='お試し';
+  openDialog('本番の工事にする',`${reason?`<p class="dialog-note">${esc(reason)}</p>`:''}<p class="hint keep">お試しで作った記録対象・写真・黒板・調書をそのまま使い、通常の工事にします。この後は作業ZIPに保存できます。</p><div class="dialog-fields">${field('工事名','name',imported?project.name:'',{max:100})}${route?field('路線名（「お試し路線」の名前を変えます）','routeName','',{max:300}):''}${field('作業日','workDate',currentWorkDate(),{type:'date'})}${hasPhotos?checkbox('撮影済みの写真の作業日と黒板の「撮影月日」もこの日付にする',{name:'applyPhotos',checked:!imported}):''}</div>`,async data=>{
     const name=String(data.get('name')||'').trim(),routeName=String(data.get('routeName')||'').trim(),workDate=String(data.get('workDate')||'');
     if(!name)throw new Error('工事名を入力してください。');if(route&&!routeName)throw new Error('路線名を入力してください。');
     await mutate(next=>{
@@ -1006,9 +1007,13 @@ function editPhotoDialog(id) {
 function showImportReview(data) {
   const same = bundleId === data.bundleId; const counts = summarize(data.project);
   const uses = [...new Set(data.project.targets.map(item => item.useCase))].join('・');
-  openDialog('読み込む作業の確認', `<div class="dialog-fields">${panelHeading(data.project.name,{eyebrow:'WORK PACKAGE',level:3})}<p>${data.project.targets.length}記録対象・${counts.records}記録・原本${data.project.photos.length}枚<br>用途：${esc(uses || '未登録')}<br>${data.project.groups.length ? `路線${data.project.groups.length}件` : '路線なし'}</p><p class="dialog-note">${same ? '前回と同じZIPです。' : ''}${project ? '今の作業から切り替えます。先に作業ZIPを保存してください。' : '検証が完了しました。'} 写真の自動追加や統合はしません。</p></div>`, async () => {
+  openDialog('読み込む作業の確認', `<div class="dialog-fields">${panelHeading(data.project.name,{eyebrow:'WORK PACKAGE',level:3})}<p>${data.project.targets.length}記録対象・${counts.records}記録・原本${data.project.photos.length}枚<br>用途：${esc(uses || '未登録')}<br>${data.project.groups.length ? `路線${data.project.groups.length}件` : '路線なし'}</p><p class="dialog-note">${same ? '前回と同じZIPです。' : ''}${project ? (isTrialMode()?'今のお試しの内容は消えます。':'今の作業から切り替えます。先に作業ZIPを保存してください。') : '検証が完了しました。'} 写真の自動追加や統合はしません。</p>${checkbox('お試しとして開く（作業ZIPを保存せずに削除できる）',{name:'asTrial',checked:isTrialMode(),description:'中身を確認するだけの時に使います。「お試しを削除して最初に戻る」でダウンロードせずに消せます。残す時は「本番の工事にする」を押します。'})}</div>`, async form => {
+    // お試しとして開いた工事は、作業ZIPの保存を求めずに削除できる（本番の工事にすることもできる）。
+    const asTrial=form.get('asTrial')==='on';
+    if(asTrial)data.project.trial=true;else delete data.project.trial;
     await replaceWork(data.project, data.originals, data.bundleId||null); mode = 'field';
-    notify(`作業ZIPを開きました（原本${data.project.photos.length}枚）。`);
+    if(asTrial)dirty=false;
+    notify(asTrial?`作業ZIPをお試しとして開きました（原本${data.project.photos.length}枚）。確認が終わったら「お試しを削除して最初に戻る」で消せます。`:`作業ZIPを開きました（原本${data.project.photos.length}枚）。`);
   }, '開く');
 }
 
