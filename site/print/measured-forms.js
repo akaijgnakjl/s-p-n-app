@@ -56,12 +56,14 @@ export function printTrialPhotos(page,urls,labels){
   }return sheet('trial',`${density?'現密':'コア密'}写真帳の3段配置`,b,images);
 }
 
-export const TS_ROW_EDGES=Object.freeze([256.08,268.68,280.2,292.08,304.32,316.92,328.44,340.32,352.56,365.16,376.68,388.2,399.72,411.24,422.76,434.64,446.88,459.48,471,482.88,495.12,507.72,519.24,527.76]);
+// 23行を表の上端256.08から下端527.76まで同じ高さ（約11.81pt）で割り付ける。見本の最終行だけ8.52ptと狭く、文字が枠線に重なって段ズレしたため。
+export const TS_TABLE_TOP=256.08,TS_TABLE_BOTTOM=527.76,TS_ROWS=23;
+export const TS_ROW_EDGES=Object.freeze(Array.from({length:TS_ROWS+1},(_,i)=>Math.round((TS_TABLE_TOP+(TS_TABLE_BOTTOM-TS_TABLE_TOP)*i/TS_ROWS)*100)/100));
 const TS_X=[47.511,103.431,153.471,203.511,253.551,303.591,353.631,403.671,453.711,503.751,553.791];
 export function planTSReports(records){
   if(records.some(c=>tsReportCells(c).some((v,i)=>wrap(v,i?46:52,7.68).length>1)||wrap(`${c.projectName}　${c.groupName}`,640,8.28).length>1||wrap(c.record.reportFields?.surveyor,160,9.48).length>1||['standard','internalStandard'].some(key=>wrap(c.record.reportFields?.[key],78,6.84).length>1)))return null;
   const groups=new Map();for(const c of records){const f=c.record.reportFields||{},key=JSON.stringify([c.groupId,f.surveyor,f.standard,f.internalStandard]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(c);}
-  const pages=[];for(const group of groups.values())for(let at=0;at<group.length;at+=23)pages.push({kind:'report',useCase:'TS出来形(バリアフリー)',title:'測定結果一覧表',referenceLayout:'ts',orientation:'landscape',groupName:group[0].groupName,records:group.slice(at,at+23),continued:at>0,usedMm:mm(340.44)});return pages;
+  const pages=[];for(const group of groups.values())for(let at=0;at<group.length;at+=TS_ROWS)pages.push({kind:'report',useCase:'TS出来形(バリアフリー)',title:'測定結果一覧表',referenceLayout:'ts',orientation:'landscape',groupName:group[0].groupName,records:group.slice(at,at+TS_ROWS),continued:at>0,usedMm:mm(340.44)});return pages;
 }
 const spread=(value,x,end,y,size=6.84)=>Array.from(value).map((v,i,a)=>text(x+(end-x)*i/Math.max(1,a.length-1),y,v,size,'start')).join('');
 export function printMeasuredTS(page){
@@ -71,10 +73,10 @@ export function printMeasuredTS(page){
   b+=text(556.79,173.4,'測定者',9.48,'start')+text(670.071,173.64,f.surveyor||'',9.48)+text(773.39,173.4,'印',9.48,'start')+line(553.31,176.16,789.35,.49);
   for(const [x,fill] of [[103.431,'#80ffff'],[253.551,'#ff80ff'],[403.671,'#ffff80']])b+=rect(x,188.76,150.24,15.48,fill);
   for(const x of [153.471,303.591])b+=rect(x,256.56,50.16,271.8,'#ffffcc');
-  b+=rect(47.031,188.28,.96,340.44)+rect(789.951,189.24,.96,336.84);
+  b+=rect(47.031,188.28,.96,340.44)+rect(789.951,189.24,.96,339.48);
   for(const x of [102.951,253.071,403.191,553.31])b+=rect(x,189.24,.96,339.48);
   for(const x of [152.991,203.031,303.111,353.151,453.231,503.271])b+=rect(x,235.92,.96,292.8);
-  b+=rect(47.991,188.28,742.92,.96)+rect(47.991,234.96,742.92,.96)+rect(554.271,525.12,236.64,.96);
+  b+=rect(47.991,188.28,742.92,.96)+rect(47.991,234.96,742.92,.96)+rect(554.271,TS_TABLE_BOTTOM,236.64,.96);
   for(const y of [203.64,219.48,...TS_ROW_EDGES])b+=rect(47.991,y,506.28,.96);
   for(const [label,y] of [['測定項目',198.96],['規格値',214.56],['社内規格値',230.28],['測点又は区別',248.04]])b+=spread(label,48.95,95.271,y);
   for(const [label,x] of [['△X',178.911],['△Y',329.031],['偏心量',477.471]])b+=text(x,198.48,label,6.84);
@@ -82,8 +84,8 @@ export function printMeasuredTS(page){
   for(let i=0;i<3;i++){const x=150.12*i;b+=text(165.711+x,214.2,f.standard||'',6.84)+text(165.711+x,230.04,f.internalStandard||'',6.84)+text(230.631+x,214.2,'mm',6.84,'start')+text(230.631+x,229.92,'mm',6.84,'start');}
   const headers=['設計値','実測値','差','設計値','実測値','差','△ Ⅹ','△ Ｙ','偏心量ｄ'];
   headers.forEach((label,i)=>{const left=TS_X[i+1],right=TS_X[i+2];b+=label.length>=3?spread(label,left+1.44,right-7.2,243.239):text((left+right)/2,243.239,label,6.84);b+=text((left+right)/2,253.8,[0,1,3,4].includes(i)?'m':'mm',6.84);});
-  const baselines=[265.2,277.32,288.96,301.08,313.441,325.56,337.2,349.32,361.68,373.8,385.32,396.84,408.36,419.88];
-  page.records.forEach((c,row)=>{b+=`<g data-record-id="${esc(c.recordId)}">`+tsReportCells(c).map((value,col)=>text(col?TS_X[col+1]-5.28:(TS_X[0]+TS_X[1])/2,baselines[row]??(TS_ROW_EDGES[row]+TS_ROW_EDGES[row+1])/2+2.4,value,7.68,col?'end':'middle',[2,5].includes(col)?'fill="#ff0000"':'')).join('')+'</g>';});return sheet('ts','TS出来形の測定結果一覧表',b);
+  
+  page.records.forEach((c,row)=>{b+=`<g data-record-id="${esc(c.recordId)}">`+tsReportCells(c).map((value,col)=>text(col?TS_X[col+1]-5.28:(TS_X[0]+TS_X[1])/2,(TS_ROW_EDGES[row]+TS_ROW_EDGES[row+1])/2+2.6,value,7.68,col?'end':'middle',[2,5].includes(col)?'fill="#ff0000"':'')).join('')+'</g>';});return sheet('ts','TS出来形の測定結果一覧表',b);
 }
 
 const TS_PHOTO_BOXES=[[199.56,68.64,189,52.56],[200.52,304.8,189,52.44],[199.56,542.04,189,52.2]];
