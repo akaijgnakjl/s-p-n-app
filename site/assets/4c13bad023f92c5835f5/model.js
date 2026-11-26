@@ -84,7 +84,7 @@ function validateSourceReference(value, registry) {
 /** Current schema only. Conversion is explicit at ZIP and IndexedDB boundaries. */
 export function validateProject(project) {
   if (!object(project) || project.format !== FORMAT || project.schemaVersion !== 2) fail('この作業ファイルの形式・バージョンには対応していません'); rejectKeys(project, ['routes']);
-  text(project.appVersion, 'アプリのバージョン', { max: 30, required: true }); text(project.name, '工事名', { max: 100, required: true, multiline: true }); checkTimestamp(project.createdAt, '工事の作成日時'); checkTimestamp(project.updatedAt, '工事の更新日時'); try { validateProjectWorkDate(project.workDate); } catch (error) { fail(error.message); }
+  text(project.appVersion, 'アプリのバージョン', { max: 30, required: true }); text(project.name, '工事名', { max: 100, required: true, multiline: true }); checkTimestamp(project.createdAt, '工事の作成日時'); checkTimestamp(project.updatedAt, '工事の更新日時'); try { validateProjectWorkDate(project.workDate); } catch (error) { fail(error.message); } if (project.trial !== undefined && project.trial !== true) fail('お試しの指定が正しくありません');
   if (!Array.isArray(project.groups) || project.groups.length > LIMITS.groups) fail('グループは50以内にしてください'); if (!Array.isArray(project.targets) || project.targets.length > LIMITS.targets) fail('記録対象は2000以内にしてください'); if (!Array.isArray(project.photos) || project.photos.length > LIMITS.photos) fail(`写真は履歴を含め${LIMITS.photos}枚以内にしてください`);
   const ids = new Set(), groups = new Map(), groupNames = new Set(), targetNames = new Map(), records = new Map(), photoOwners = new Map(); checkId(project.id, ids, '工事');
   for (const group of project.groups) {
@@ -149,7 +149,7 @@ export function upgradeProject(raw) {
   const result = { ...rest, schemaVersion: 2, appVersion: '0.2.0', groups, targets, photos }; validateProject(result); return result;
 }
 
-export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.9.23', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
+export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.9.24', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
 export function addGroup(project, { kind, name } = {}) {
   validateProject(project); if (!GROUP_KINDS.includes(kind)) fail('グループの種類を選択してください'); const value = inputName(name, 'グループ名'); if (project.groups.length >= LIMITS.groups) fail('グループは50以内にしてください'); if (project.groups.some(group => group.kind === kind && normalizedName(group.name.trim()) === normalizedName(value))) fail('同じ種類に同名のグループがあります');
   const group = { id: uid(), kind, name: value }; project.groups.push(group); project.updatedAt = now(); return group;

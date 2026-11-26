@@ -2,8 +2,13 @@ import {LIMITS,OUTPUT_LIMITS} from '../definitions.js';
 import {formatBytes} from '../limits.js';
 import {escapeHTML as esc,button,actions,actionBlock,disclosure,panelHeading,tabButton,tabBar,textField} from './components.js';
 
-export function renderProjectHeader({name,storageAvailable,zipDirty,mode,groups,activeGroupId,progressHTML=''}){
-  const project=`<section class="project-bar"><div class="project-title">${panelHeading(name,{className:'ui-panel-heading--inline',actions:button('訂正',{attrs:{'data-action':'rename-project','aria-label':'工事名を訂正'}})})}<small><span>${storageAvailable?'端末に一時保存':'一時保存なし'}</span> ・ <span>${zipDirty?'作業ZIPに未保存の変更あり':'作業ZIPと同じ内容'}</span></small></div></section>`;
+// お試し中の帯。工事名・作業日を決めずに使え、作業ZIPの保存は求めない。本番の工事にするか、削除して終わる。
+export function renderTrialBanner(){
+  return `<section class="trial-banner" role="status"><div><strong>お試し中</strong><span>工事を作らずに、作成・削除を自由に試せます。作業ZIPへの保存は不要です（この端末にだけ一時保存）。</span></div>${actions(button('本番の工事にする',{variant:'primary',attrs:{'data-action':'convert-trial'}})+button('お試しを削除して終わる',{variant:'danger',attrs:{'data-action':'end-trial'}}),{className:'trial-banner-actions'})}</section>`;
+}
+export function renderProjectHeader({name,trial=false,storageAvailable,zipDirty,mode,groups,activeGroupId,progressHTML=''}){
+  const status=trial?'お試し（作業ZIPの保存は不要）':zipDirty?'作業ZIPに未保存の変更あり':'作業ZIPと同じ内容';
+  const project=(trial?renderTrialBanner():'')+`<section class="project-bar"><div class="project-title">${panelHeading(name,{className:'ui-panel-heading--inline',actions:trial?'':button('訂正',{attrs:{'data-action':'rename-project','aria-label':'工事名を訂正'}})})}<small><span>${storageAvailable?'端末に一時保存':'一時保存なし'}</span> ・ <span>${status}</span></small></div></section>`;
   const navigation=tabBar([['field','撮影・確認'],['organize','写真を整理'],['report','調書入力'],['output','出力'],['handoff','ZIP受け渡し']].map(([id,label])=>tabButton(label,{selected:id===mode,attrs:{'data-mode':id,'aria-current':id===mode?'page':'false'}})).join(''),{label:'作業の切り替え',role:'navigation',className:'steps app-navigation'});
   const scope=mode==='output'||mode==='handoff'?'':tabBar(groups.map(g=>button(`${esc(g.label)}<small>${g.count}</small>`,{html:true,className:g.id===activeGroupId?'selected':'',attrs:{'data-group-scope':g.id,'aria-pressed':String(g.id===activeGroupId)}})).join('')+button('＋ 路線',{variant:'subtle',attrs:{'data-action':'add-group'}})+(activeGroupId&&activeGroupId!=='__all__'?button('路線名を訂正',{variant:'subtle',attrs:{'data-edit-group':activeGroupId}}):''),{label:'表示する所属',role:'navigation',className:'workspace-scope-nav'});
   // 手順の上に「現場は1で終わり・2〜5は持ち帰り後」を示す見出しを置く（矢羽根の1と2〜5の幅に合わせる）。
@@ -28,7 +33,8 @@ export function renderInitialView({name='',routeName='',maxPhotos=LIMITS.photos}
   const fields=renderProjectSetupFields({name,routeName,id:'initialProjectName'});
   const controls=actions(button('この工事を始める',{type:'submit',variant:'primary'})+button('作業ZIPを開く',{attrs:{'data-action':'open'}}),{className:'project-setup-actions'});
   const limits=disclosure('写真の形式と上限',`<p class="hint">工事全体の上限は履歴込み${esc(maxPhotos)}枚・原本合計${esc(limitLabel)}。1枚は${LIMITS.imageBytes/1024/1024}MiB・${LIMITS.pixels/10000}万画素・一辺${LIMITS.side}pxまでです。形式はJPEG / PNG / WebPです。未定義の「現場写真」は登録できません。</p>`,{className:'project-setup-limits'});
-  return `<section class="panel project-setup">${panelHeading('新しい工事')}<form id="initialProjectForm" class="project-setup-form">${fields}${controls}</form>${limits}</section>`;
+  const trial=`<div class="project-setup-trial"><div><strong>まず試してみる</strong><p class="hint keep">工事名・路線名・作業日を決めずに、記録対象・写真・黒板・調書・出力を試せます。作業ZIPの保存は不要で、あとから本番の工事にもできます。</p></div>${button('お試しで使う（工事を作らない）',{attrs:{'data-action':'start-trial'}})}</div>`;
+  return `<section class="panel project-setup">${panelHeading('新しい工事')}<form id="initialProjectForm" class="project-setup-form">${fields}${controls}</form>${trial}${limits}</section>`;
 }
 // 作業ZIPを保存して終了する欄。撮影・確認とZIP受け渡しの両方に置く（ZIPの保存はこの中のダイアログで行う）。
 export function renderFinishWork(){

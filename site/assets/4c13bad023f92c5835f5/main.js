@@ -289,6 +289,8 @@ function workDateConfirmDialog(after=null){
 // 作業日が今日まだ確認されていなければ確認ダイアログを出して true を返す（呼び出し元は中断する）。
 function askWorkDateFirst(after){
   if(!project||!needsWorkDateConfirm(project,dateToday()))return false;
+  // お試しでは確認を出さず、今日の日付で進める。
+  if(isTrialMode()){setProjectWorkDate(project,dateToday(),dateToday());return false;}
   workDateConfirmDialog(after);return true;
 }
 
@@ -396,14 +398,41 @@ async function startNewProject(name,routeName,workDate=dateToday()) {
   await replaceWork(next, new Map());mode='field';activeGroupId=route.id;initialRouteName='';selectedTargetIds.clear();
   notify('工事と路線を作成しました。「追加」から記録対象を登録してください。');
 }
+// お試し：工事名・路線名・作業日を決めずに始め、作業ZIPの保存も求めない。あとで本番の工事にできる。
+const TRIAL_ROUTE='お試し路線';
+const isTrialMode=()=>project?.trial===true;
+async function startTrial(){
+  const next=createProject('お試し'),route=addGroup(next,{kind:'路線',name:TRIAL_ROUTE});next.trial=true;setProjectWorkDate(next,dateToday(),dateToday());
+  await replaceWork(next,new Map());dirty=false;mode='field';activeGroupId=route.id;initialProjectName='';initialRouteName='';selectedTargetIds.clear();
+  notify('お試しを始めました。記録対象・写真・黒板・調書を自由に作成・削除できます。作業ZIPへの保存は不要です。');
+}
+function clearWork(message){
+  return (async()=>{await sessionSaver.pause();if(storage)await storage.clear();project=null;sessionSaver.reset();originals=new Map();boardDrafts.clear();reportDrafts.clear();nameDrafts.clear();pendingPaste=null;disclosureState.clear();closePhotoDrawer();revokeThumbnails();dirty=false;outputState.initialized=false;invalidateOutput();notify(message);})();
+}
+function endTrialDialog(){
+  if(pendingPhoto)throw new Error('未保存の写真があります。再試行か取消をしてから終了してください。');
+  openDialog('お試しを削除して終わる',`<p class="dialog-note">お試しの内容（対象${project.targets.length}件・写真${project.photos.length}枚）をこの端末から消去し、最初の画面に戻ります。消した内容は元に戻せません。残したい場合は「本番の工事にする」を使ってください。</p>`,()=>clearWork('お試しを削除しました。'),'削除して終わる');
+}
+function convertTrialDialog(reason=''){
+  const route=project.groups.find(group=>group.kind==='路線'&&group.name===TRIAL_ROUTE),hasPhotos=project.photos.length>0;
+  openDialog('本番の工事にする',`${reason?`<p class="dialog-note">${esc(reason)}</p>`:''}<p class="hint keep">お試しで作った記録対象・写真・黒板・調書をそのまま使い、通常の工事にします。この後は作業ZIPに保存できます。</p><div class="dialog-fields">${field('工事名','name','',{max:100})}${route?field('路線名（「お試し路線」の名前を変えます）','routeName','',{max:300}):''}${field('作業日','workDate',currentWorkDate(),{type:'date'})}${hasPhotos?checkbox('撮影済みの写真の作業日と黒板の「撮影月日」もこの日付にする',{name:'applyPhotos',checked:true}):''}</div>`,async data=>{
+    const name=String(data.get('name')||'').trim(),routeName=String(data.get('routeName')||'').trim(),workDate=String(data.get('workDate')||'');
+    if(!name)throw new Error('工事名を入力してください。');if(route&&!routeName)throw new Error('路線名を入力してください。');
+    await mutate(next=>{
+      next.name=name;if(route){const group=next.groups.find(g=>g.id===route.id);group.name=routeName;}
+      setProjectWorkDate(next,workDate,dateToday());if(hasPhotos&&data.get('applyPhotos')==='on')setPhotosWorkDate(next,next.photos.map(photo=>photo.id),workDate);
+      delete next.trial;
+    },'本番の工事にしました。作業の区切りで「↓ 作業ZIPを保存」を押してください。');
+  },'本番の工事にする');
+}
 function newProjectDialog() {
   if(!project){
     floating.close();if($('workMenu'))$('workMenu').open=false;
     $('initialProjectName')?.focus();return;
   }
-  // 作業ZIPに保存していない変更があれば、今の工事が消えることを知らせ、確認のチェックがないと始めない。
-  const unsaved=dirty;
-  openDialog('新しい工事を始める', `<div class="dialog-fields">${renderProjectSetupFields()}</div>${unsaved?`<div class="dialog-note unsaved-warning" role="alert"><strong>今の工事に、作業ZIPに保存していない変更があります。</strong><br>新しい工事を始めると、今の工事はこの端末から消えます。先に画面上部の「↓ 作業ZIPを保存」で保存してください。</div><label class="checkbox"><input type="checkbox" name="unsavedConfirm" required><span>作業ZIPを保存した（または今の工事は不要）ことを確認しました</span></label>`:'<p class="dialog-note">今の工事から切り替えます。今の工事はこの端末から消えるため、必要なら先に作業ZIPを保存してください。</p>'}`, data => {
+  // 作業ZIPに保存していない変更があれば、今の工事が消えることを知らせ、確認のチェックがないと始めない（お試しは保存不要）。
+  const unsaved=dirty&&!isTrialMode();
+  openDialog('新しい工事を始める', `<div class="dialog-fields">${renderProjectSetupFields()}</div>${isTrialMode()?'<p class="dialog-note">お試しの内容はこの端末から消えます。残したい場合は、先に「本番の工事にする」を使ってください。</p>':unsaved?`<div class="dialog-note unsaved-warning" role="alert"><strong>今の工事に、作業ZIPに保存していない変更があります。</strong><br>新しい工事を始めると、今の工事はこの端末から消えます。先に画面上部の「↓ 作業ZIPを保存」で保存してください。</div><label class="checkbox"><input type="checkbox" name="unsavedConfirm" required><span>作業ZIPを保存した（または今の工事は不要）ことを確認しました</span></label>`:'<p class="dialog-note">今の工事から切り替えます。今の工事はこの端末から消えるため、必要なら先に作業ZIPを保存してください。</p>'}`, data => {
     if(unsaved&&data.get('unsavedConfirm')!=='on')throw new Error('作業ZIPの保存を確認してから始めてください。');
     return startNewProject(data.get('name'),data.get('routeName'),data.get('workDate'));
   }, '工事を始める');
@@ -835,11 +864,12 @@ async function openPrintOutput(){
 }
 
 function finishWorkDialog(){
+  if(isTrialMode()){endTrialDialog();return;}
   if(pendingPhoto)throw new Error('未保存の写真があります。再試行か取消をしてから終了してください。');
   let requested=false;
   openDialog('作業を終了',`<p class="dialog-note">${esc(project.name)}（対象${project.targets.length}件・原本${project.photos.length}枚）をこの端末から消去します。先に作業ZIPを保存し、保存先を確認してください。</p><div class="dialog-fields">${actions(button('作業ZIPを保存',{id:'finishBackup'}))}${checkbox('作業ZIPを保存したことを確認しました',{name:'confirmed',required:true})}</div>`,async()=>{
     if(!requested)throw new Error('先に「作業ZIPを保存」を押してください。');
-    await sessionSaver.pause();if(storage)await storage.clear();project=null;sessionSaver.reset();originals=new Map();boardDrafts.clear();reportDrafts.clear();nameDrafts.clear();pendingPaste=null;disclosureState.clear();closePhotoDrawer();revokeThumbnails();dirty=false;outputState.initialized=false;invalidateOutput();notify('作業を終了しました。保存したZIPから再開できます。');
+    await clearWork('作業を終了しました。保存したZIPから再開できます。');
   },'消去して終了');
   $('finishBackup').onclick=()=>run(async()=>{await savePackage();requested=true;});
 }
@@ -988,6 +1018,7 @@ function download(blob, filename) {
 }
 
 async function savePackage() {
+  if(isTrialMode()){convertTrialDialog('お試しのままでは作業ZIPに保存できません。残す場合は工事名を決めて本番の工事にしてください。');return;}
   requireSavedNames();
   requireResolvedPaste();
   if (!project) return;
@@ -1096,7 +1127,7 @@ function emptyView(){return renderInitialView({name:initialProjectName,routeName
 function projectHeader(){
   const groups=[['__all__','全路線'],...(project.targets.some(t=>!t.groupId)?[['','路線未設定（旧データ）']]:[]),...project.groups.map(g=>[g.id,g.name])].map(([id,label])=>({id,label,count:project.targets.filter(t=>id==='__all__'||t.groupId===(id||null)).length}));
   const models=project.targets.filter(t=>activeGroupId==='__all__'||t.groupId===(activeGroupId||null)).map(t=>{const slots=t.records.flatMap(r=>r.slots);return {id:t.id,useCase:t.useCase,taken:slots.filter(s=>s.status==='taken').length,required:slots.filter(s=>s.status!=='unnecessary').length,complete:slots.length>0&&slots.every(s=>['taken','unnecessary'].includes(s.status))};});
-  return renderProjectHeader({name:project.name,storageAvailable:Boolean(storage),zipDirty:dirty,mode,groups,activeGroupId,progressHTML:mode==='field'?renderTargetTabs(models,activeTargetId,useCaseFilter):''});
+  return renderProjectHeader({name:project.name,trial:isTrialMode(),storageAvailable:Boolean(storage),zipDirty:dirty,mode,groups,activeGroupId,progressHTML:mode==='field'?renderTargetTabs(models,activeTargetId,useCaseFilter):''});
 }
 function captureView({group,target,record,visible}){
   const summary=activeGroupId==='__all__'?summarize(project):summarize(project,activeGroupId||null);
@@ -1438,6 +1469,9 @@ function handleWorkspaceClick(event) {
     if(button.dataset.action==='resolve-names'){const id=nameDrafts.keys().next().value;if(!id)return;activeGroupId='__all__';useCaseFilter='';onlyMissing=false;activeTargetId=id;activeRecordId='';mode='organize';render();const input=document.querySelector(`[data-name-draft="${CSS.escape(id)}"]`),box=input?.closest('details');if(box)box.open=true;input?.scrollIntoView({block:'center'});input?.focus({preventScroll:true});return;}
     if(button.dataset.action==='discard-reports'){const ids=new Set(scopedRecords(project,activeGroupId,reportUseCase).map(c=>c.record.id));for(const key of reportDrafts.keys())if(ids.has(key.slice(0,key.indexOf(':'))))reportDrafts.delete(key);render();notify('表示中の調書の編集を取り消しました。他の範囲の下書きは残ります。');return;}
     if (button.dataset.action === 'new') { newProjectDialog(); return; }
+    if(button.dataset.action==='start-trial'){run(startTrial);return;}
+    if(button.dataset.action==='convert-trial'){convertTrialDialog();return;}
+    if(button.dataset.action==='end-trial'){endTrialDialog();return;}
     if (button.dataset.action === 'open') { $('openPackage').click(); return; }
     if (button.dataset.action === 'export') { run(savePackage); return; }
     if (button.dataset.action === 'add-group') { newGroupDialog(); return; }
