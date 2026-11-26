@@ -13,7 +13,8 @@ export function renderBoardChoices(selectedId, {selectable=true, formId=''}={}) 
 
 export function renderTargetPicker({targets,selectedId,selectedName,useCaseFilter,onlyMissing,uses,open,selectedIds=new Set()}){
   const heading=panelHeading('記録対象',{className:'ui-panel-heading--row',actions:button('＋ 追加',{attrs:{'data-action':'add-targets'}})});
-  const filters=`<div class="target-picker-filters">${selectField('用途',optionItems([['','すべての用途'],...uses],useCaseFilter),{id:'useCaseFilter',attrs:{class:'target-filter'}})}${checkbox('未撮影の枠がある対象のみ',{id:'onlyMissing',checked:onlyMissing})}</div>`;
+  // 用途の絞り込みは画面上部の用途タブで行う（同じ機能のプルダウンは置かない）。
+  const filters=`<div class="target-picker-filters">${checkbox('未撮影の枠がある対象のみ',{id:'onlyMissing',checked:onlyMissing})}</div>`;
   const list=`<div class="target-list">${targets.map(t=>`<div class="target-management-row">${checkbox(`${t.name}を選択`,{checked:selectedIds.has(t.id),attrs:{'data-select-target':t.id}})}${button(`<span class="target-name">${esc(t.name)}</span>`,{className:`target-button${selectedId===t.id?' selected':''}`,attrs:{'data-target':t.id,'aria-pressed':String(selectedId===t.id),title:t.name},html:true})}${button('削除',{variant:'danger',attrs:{'data-delete-target':t.id,'aria-label':`${t.name}を削除`}})}</div>`).join('')||'<p class="hint keep">この範囲に記録対象はありません。「＋ 追加」から登録します。</p>'}</div>`;
   const deletion=actions(button('表示中を全選択',{attrs:{'data-action':'select-all-targets'}})+button('選択を解除',{attrs:{'data-action':'clear-target-selection'}})+button(`選択の名前を貼り付けで変更（${selectedIds.size}件）`,{attrs:{'data-action':'rename-selected-targets','data-unavailable':!selectedIds.size?'true':undefined,title:'Excel等からコピーした名前一覧で、選択した対象の管理名を上から順に変更します'}})+button(`選択を削除（${selectedIds.size}件）`,{variant:'danger',attrs:{'data-action':'delete-selected-targets','data-unavailable':!selectedIds.size?'true':undefined}}));
   return disclosure(`<span>記録対象を選ぶ</span><span class="target-picker-current"><strong>${esc(selectedName||'未選択')}</strong><span class="hint keep">${targets.length}件</span></span>`,heading+filters+list+deletion,{id:'targetPicker',className:'panel record-target-list',kind:'panel',saveKey:'targets',open,labelHTML:true,bodyClass:'target-picker-body'});
@@ -32,13 +33,15 @@ export function renderTargetNavigation(targets,selectedId,{placement='top'}={}){
 
 export function renderTSReading(record){const fields=record.reportFields||{},m=tsMeasurements(fields);return `<div class="next-date-panel ts-reading"><strong>スクリーンショットの読取結果</strong><p>計測箇所：${esc(tsLocationLabel(fields)||'未読取')}</p><p>X=${m?.dx??'—'}mm ／ Y=${m?.dy??'—'}mm ／ D=${m?.d??'—'}mm</p><p class="hint">BACK→X、LEFT／RIGHT→Yです。画像と見比べて調書を確認してください。</p>${button('調書で確認・訂正',{attrs:{'data-go-report':record.id}})}</div>`;}
 
-export function renderTargetTabs(targets,selectedId){
-  const groups=new Map(),selectedUse=targets.find(target=>target.id===selectedId)?.useCase;
+// useCaseFilter を渡すと、用途が2つ以上の時に先頭へ「すべて」を置き、絞り込み中の用途を選択表示にする（一覧の用途プルダウンの代わり）。
+export function renderTargetTabs(targets,selectedId,useCaseFilter){
+  const groups=new Map(),filtering=useCaseFilter!==undefined,selectedUse=filtering?useCaseFilter:targets.find(target=>target.id===selectedId)?.useCase;
   for(const target of targets){
     const group=groups.get(target.useCase)||{useCase:target.useCase,taken:0,required:0,complete:true};
     group.taken+=target.taken||0;group.required+=target.required||0;group.complete&&=target.complete;groups.set(target.useCase,group);
   }
-  return `<nav class="target-progress-tabs" aria-label="記録対象の用途と撮影枚数">${[...groups.values()].map(t=>button(`<strong>${esc(t.useCase)}</strong><span>${t.taken}/${t.required}</span><small>${t.complete?'撮影完了':'未完了'}</small>`,{html:true,className:`target-progress-tab ${t.complete?'is-complete':'is-incomplete'}${t.useCase===selectedUse?' selected':''}`,attrs:{'data-use-case-tab':t.useCase,'aria-pressed':String(t.useCase===selectedUse)}})).join('')}</nav>`;
+  const all=filtering&&groups.size>1?button('<strong>すべて</strong><span>全用途</span>',{html:true,className:`target-progress-tab target-progress-all${selectedUse?'':' selected'}`,attrs:{'data-use-case-tab':'__all__','aria-pressed':String(!selectedUse)}}):'';
+  return `<nav class="target-progress-tabs" aria-label="記録対象の用途と撮影枚数">${all}${[...groups.values()].map(t=>button(`<strong>${esc(t.useCase)}</strong><span>${t.taken}/${t.required}</span><small>${t.complete?'撮影完了':'未完了'}</small>`,{html:true,className:`target-progress-tab ${t.complete?'is-complete':'is-incomplete'}${t.useCase===selectedUse?' selected':''}`,attrs:{'data-use-case-tab':t.useCase,'aria-pressed':String(t.useCase===selectedUse)}})).join('')}</nav>`;
 }
 const toneFor=status=>status==='taken'?'success':status==='retake'?'danger':status==='unnecessary'?'muted':'warning';
 export function renderPhotoSlot({name,status,statusLabel,guide,photo,count,reason,recordId,boardAvailable,screenshot=false,portrait=false}){

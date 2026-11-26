@@ -84,7 +84,7 @@ function defaults() {
       useCaseFilter: '', onlyMissing: false, reportUseCase: '基準点', activeCaptureSlot: '',
       organize: { query: '', useCase: '', category: '', slot: '', status: '', dateStatus: '', reportStatus: '', onlyMissing: false, groupId: '__all__' },
       disclosures: [], drawerPhotoId: '', scroll: { x: 0, y: 0, target: 0, targetList: 0, drawer: 0 },
-      output: { groupId: '__all__', useCase: '', edition: 'draft', selectedIds: [], initialized: false },
+      output: { groupId: '__all__', useCase: '', selectedIds: [], initialized: false },
       zipDirty: true, lastExportAt: null,
     },
     drafts: { names: [], reports: [], boards: [], pendingPaste: null },
@@ -222,7 +222,7 @@ export function sanitizeSession(project, raw) {
       else {
         view.output.groupId = group(output, 'groupId');
         view.output.useCase = enumeration(output, 'useCase', ['', ...USES], '', '出力の用途');
-        view.output.edition = enumeration(output, 'edition', ['draft', 'final'], 'draft', '出力の版');
+        // 出力の版（途中版／完成版）は廃止。旧データの値は黙って読み飛ばす。
         view.output.initialized = boolean(output, 'initialized', false, '出力範囲の選択状態');
         const selected = new Set();
         for (const recordId of entries(get(output, 'selectedIds'), '表示', '出力記録')) {

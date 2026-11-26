@@ -42,7 +42,7 @@ details > summary::marker { color: var(--muted); font-size: 1em; }
 .ui-disclosure-body > :first-child { margin-top: 0; }
 .ui-disclosure-body > :last-child { margin-bottom: 0; }
 .ui-disclosure-body > .ui-panel-heading { margin-bottom: 0; }
-.ui-disclosure--control > summary, .ui-disclosure--menu > summary { padding-inline: var(--control-padding-inline); border: 1px solid var(--border); border-radius: var(--control-radius); background: var(--paper); color: var(--text); }
+.ui-disclosure--control > summary, .ui-disclosure--menu > summary { padding-inline: var(--control-padding-inline); border: 1px solid var(--border); border-radius: var(--button-radius); background: var(--paper); color: var(--text); }
 .ui-disclosure--control[open] > summary, .ui-disclosure--menu[open] > summary { border-color: var(--brand-line); background: var(--brand-soft); }
 .ui-disclosure--control:not([data-floating])[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .ui-disclosure--control > .ui-disclosure-body { padding: var(--space-4); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 10px 10px; background: var(--paper); box-shadow: var(--shadow-floating); }
@@ -81,7 +81,7 @@ details > summary::marker { color: var(--muted); font-size: 1em; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button, :where(.button), .ui-tabs > a {
   min-height: var(--control-height); padding: var(--control-padding-block) var(--control-padding-inline); border: 1px solid var(--border);
-  border-radius: var(--control-radius); background: var(--paper); font-size: var(--font-control);
+  border-radius: var(--button-radius); background: var(--paper); font-size: var(--font-control);
   font-weight: 600; line-height: var(--line-control); white-space: normal; overflow-wrap: anywhere; max-width: 100%; cursor: pointer;
   transition: background .15s, border-color .15s, box-shadow .15s;
 }

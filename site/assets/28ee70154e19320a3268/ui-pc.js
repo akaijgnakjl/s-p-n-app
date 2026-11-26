@@ -25,8 +25,7 @@ export function renderReportView(project, { groupId = '__all__', useCase = '基�
   if (!rows.length) return `${heading}<p class="hint keep">この所属・用途の記録はありません。撮影・確認で記録対象を登録してください。</p></section>`;
   const controls = actions(button('編集中の調書をすべて保存', { attrs: { 'data-action': 'save-reports' } })
     + button('表示中の編集を取り消す', { attrs: { 'data-action': 'discard-reports', 'data-unavailable': visibleDraftCount ? undefined : 'true' } })
-    + button('表示中の調書を入力確認済みにする', { variant: 'primary', attrs: { 'data-action': 'review-reports' } })
-    + button('出力へ', { attrs: { 'data-mode': 'output' } }), { className: 'report-actions' });
+    + button('表示中の調書を入力確認済みにする', { variant: 'primary', attrs: { 'data-action': 'review-reports' } }), { className: 'report-actions' });
   const tableRows = rows.map(({ target, record, group }, rowIndex) => {
     const state = reportReviewState(project, record.id), missing = reportMissingFields(project, record.id);
     const editing = columns.some(column => drafts.has(`${record.id}:${column.key}`));
@@ -57,11 +56,11 @@ export function renderReportView(project, { groupId = '__all__', useCase = '基�
 
 // 移動先：kind='field'は撮影・確認の記録（slotは撮影枠）、'report'は調書入力の行。
 const gotoButton=({recordId,kind,slot})=>button('ここへ移動',{variant:'subtle',className:'output-goto',attrs:{'data-goto-record':recordId||undefined,'data-goto-kind':kind,'data-goto-slot':slot||undefined}});
-export function renderOutputView(project, { groupId = '__all__', useCase = '', selectedIds = new Set(), edition = 'draft', prepared = null, ready = false, approved = false, blockers = [] } = {}) {
+export function renderOutputView(project, { groupId = '__all__', useCase = '', selectedIds = new Set(), prepared = null, ready = false, blockers = [] } = {}) {
   const rows = scopedRecords(project, groupId, useCase), allowed = new Set(rows.map(row => row.record.id));
   const chosen = [...selectedIds].filter(id => allowed.has(id));
   let model, issueError = '';
-  try { if (chosen.length) model = buildOutputModel(project, { recordIds: chosen, edition: 'draft' }); } catch (error) { issueError = error.message; }
+  try { if (chosen.length) model = buildOutputModel(project, { recordIds: chosen, edition: 'plain' }); } catch (error) { issueError = error.message; }
   const issues = model?.issues || [];
   const selectedPhotoCount = model?.selectedPhotoIds.length ?? 0, outputTooLarge = selectedPhotoCount > OUTPUT_LIMITS.embeddedPhotos;
   const stepper = tabBar([['outputRange', '1 出力範囲'], ['outputChecks', '2 不足を確認'], ['outputResult', '3 プレビュー・印刷']].map(([id, label]) => `<a href="#${id}">${label}</a>`).join(''), { role: 'navigation', className: 'output-stepper', label: '出力の手順' });
@@ -76,13 +75,14 @@ export function renderOutputView(project, { groupId = '__all__', useCase = '', s
   const blockerContent = blockers.length ? notice(`<strong>プレビューを作成できない理由があります</strong><ul class="output-goto-list">${blockers.map(item => `<li><span>${esc(item.message)}</span>${gotoButton(item)}</li>`).join('')}</ul>`, { tone: 'warning', role: 'alert', html: true }) : '';
   const limits = `<p class="hint">工事の上限：履歴を含め${LIMITS.photos}枚・原本合計${esc(formatBytes(LIMITS.totalBytes))}。1回の出力：採用写真${OUTPUT_LIMITS.embeddedPhotos}枚・画像合計${OUTPUT_LIMITS.embeddedBytes / 1024 / 1024}MiBまで。</p>${model ? `<p class="hint keep">採用写真：${selectedPhotoCount} / ${OUTPUT_LIMITS.embeddedPhotos}枚（履歴写真は含みません）。</p>` : ''}${outputTooLarge ? notice('採用写真が1回の上限を超えています。用途・記録を選び、分けて出力してください。原本の削除・圧縮は不要です。', { tone: 'warning' }) : ''}`;
   const checks = `<div id="outputChecks" class="output-issues"><h3>出力前の確認</h3>${limits}${blockerContent}${issueContent}<p class="hint">不足・未確認があってもなくても、そのまま作成・印刷できます。未撮影の枠は「未撮影」と表示します。</p></div>`;
-  const prepare = actions(button('プレビューを作成', { variant: 'primary', attrs: { 'data-action': 'prepare-output', 'data-unavailable': !chosen.length || outputTooLarge ? 'true' : undefined } }) + button('写真ファイルを保存', { attrs: { 'data-action': 'export-photos', 'data-unavailable': !chosen.length ? 'true' : undefined } }) + button('調書へ戻る', { attrs: { 'data-mode': 'report' } }), { className: 'report-actions' });
+  const prepare = actions(button('プレビューを作成', { variant: 'primary', attrs: { 'data-action': 'prepare-output', 'data-unavailable': !chosen.length || outputTooLarge ? 'true' : undefined } }) + button('写真ファイルを保存', { attrs: { 'data-action': 'export-photos', 'data-unavailable': !chosen.length ? 'true' : undefined } }), { className: 'report-actions' });
   const setup = `<section class="panel">${panelHeading('調書・写真帳を出力', { eyebrow: 'PREVIEW & PRINT', className: 'section-heading', meta: badge('見本様式 / TS調書はA4横') })}${stepper}${settings}${records}${checks}${prepare}<p class="hint">撮影不要は理由を、未撮影・要撮り直しは不足を表示します。履歴写真は載せません。写真ファイルは保存先を選べます（非対応ブラウザーはZIPで保存）。</p></section>`;
   if (!prepared) return setup;
   const previewHeading = panelHeading('調書・写真帳プレビュー', { className: 'section-heading', meta: `<span>${prepared.model.pageCount}ページ</span>`, description: '用途ごとに調書・写真帳の順です。クリックで全画面表示します。編集後は作り直してください。' });
-  const fullscreen = button('全画面で表示', { className: 'output-preview-launcher', attrs: { 'data-action': 'enlarge-output' } });
+  // 右側の「編集」は全画面表示を開き、そのまま帳票の文字を直せる編集モードにする。
+  const fullscreen = `<div class="output-preview-tools">${button('全画面で表示', { className: 'output-preview-launcher', attrs: { 'data-action': 'enlarge-output' } })}${button('<span aria-hidden="true">✎</span> 編集', { className: 'output-edit-launcher', html: true, attrs: { 'data-action': 'edit-output', 'data-unavailable': String(!ready), title: '全画面表示で、帳票の文字を押して直します（印刷・PDFだけに反映）' } })}</div>`;
   const frame = `<iframe${attrs({ id: 'outputPreview', title: '調書と写真帳のプレビュー', sandbox: 'allow-scripts allow-same-origin' })}></iframe>`;
-  const printActions = button('印刷・PDF保存', { id: 'printOutput', variant: 'primary', attrs: { 'data-action': 'print-output', 'data-unavailable': String(!ready) } }) + button('閲覧用HTMLを保存', { attrs: { 'data-action': 'save-output-html' } });
+  const printActions = button('印刷・PDF保存', { id: 'printOutput', variant: 'primary', attrs: { 'data-action': 'print-output', 'data-unavailable': String(!ready) } });
   const result = `<section id="outputResult" class="panel output-result">${previewHeading}${fullscreen}${frame}${actions(printActions, { className: 'output-confirm' })}<p class="hint">PDFは印刷画面の保存先で選びます。ヘッダー・フッターは外し、倍率は100%にします。用紙はTS調書がA4横、写真帳がA4縦です。PDF保存後も作業ZIPを保存できます。</p></section>`;
   return setup + result;
 }

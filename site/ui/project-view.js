@@ -6,18 +6,22 @@ export function renderProjectHeader({name,storageAvailable,zipDirty,mode,groups,
   const project=`<section class="project-bar"><div class="project-title">${panelHeading(name,{className:'ui-panel-heading--inline',actions:button('訂正',{attrs:{'data-action':'rename-project','aria-label':'工事名を訂正'}})})}<small><span>${storageAvailable?'端末に一時保存':'一時保存なし'}</span> ・ <span>${zipDirty?'作業ZIPに未保存の変更あり':'作業ZIPと同じ内容'}</span></small></div></section>`;
   const navigation=tabBar([['field','撮影・確認'],['organize','写真を整理'],['report','調書入力'],['output','出力'],['handoff','ZIP受け渡し']].map(([id,label])=>tabButton(label,{selected:id===mode,attrs:{'data-mode':id,'aria-current':id===mode?'page':'false'}})).join(''),{label:'作業の切り替え',role:'navigation',className:'steps app-navigation'});
   const scope=mode==='output'||mode==='handoff'?'':tabBar(groups.map(g=>button(`${esc(g.label)}<small>${g.count}</small>`,{html:true,className:g.id===activeGroupId?'selected':'',attrs:{'data-group-scope':g.id,'aria-pressed':String(g.id===activeGroupId)}})).join('')+button('＋ 路線',{variant:'subtle',attrs:{'data-action':'add-group'}})+(activeGroupId&&activeGroupId!=='__all__'?button('路線名を訂正',{variant:'subtle',attrs:{'data-edit-group':activeGroupId}}):''),{label:'表示する所属',role:'navigation',className:'workspace-scope-nav'});
-  return project+`<div class="workspace-sticky-nav">${navigation}${scope}${progressHTML}</div>`;
+  // 手順の上に「現場は1で終わり・2〜5は持ち帰り後」を示す見出しを置く（矢羽根の1と2〜5の幅に合わせる）。
+  const place='<div class="work-place-legend"><span class="is-field"><strong>現場</strong><span>1で終わり</span></span><span class="is-office"><strong>持ち帰り後</strong><span>2〜5は会社のPCなどで</span></span></div>';
+  return project+`<div class="workspace-sticky-nav">${place}${navigation}${scope}${progressHTML}</div>`;
 }
 export function renderCapacity({count,maxCount,adopted,bytes,limitBytes=LIMITS.totalBytes,near,reached}){
   const bytesLabel=formatBytes(bytes),limitLabel=formatBytes(limitBytes),remainingLabel=formatBytes(Math.max(0,limitBytes-bytes));
   const content=`<p>採用 ${adopted}枚 ／ 採用外・履歴 ${count-adopted}枚。残り最大${maxCount-count}枚・${esc(remainingLabel)}。写真が大きいと、枚数より先に容量が上限に達します。</p><p class="hint keep">使用量 ${esc(bytesLabel)} ／ 保管上限 ${esc(limitLabel)}。GBは十進単位です。作業ZIPは管理情報の分だけ少し大きくなります。</p><p class="hint">帳票1回の出力は採用${OUTPUT_LIMITS.embeddedPhotos}枚・埋込画像${OUTPUT_LIMITS.embeddedBytes/1024/1024}MiBまでです。超える場合は範囲を分けて出力します。</p><progress max="${limitBytes}" value="${bytes}" aria-label="原本容量の使用量"></progress>${near||reached?`<p class="field-error">${reached?'保管上限に達しています。写真は追加できません。':'保管上限に近づいています。'}原本・履歴は自動で圧縮・削除しません。</p>`:''}`;
   return disclosure(`<strong>原本 ${count} / ${maxCount}枚</strong><span>${esc(bytesLabel)} / ${esc(limitLabel)}</span><span class="hint keep">${reached?'上限に達しています':near?'上限に近づいています':'容量の詳細'}</span>`,content,{className:'capacity-panel',kind:'compact',saveKey:'capacity',labelHTML:true});
 }
-export function renderNextDate({recordId,dateLabel}){
-  return `<section class="next-date-panel"><div><h3>次の写真の作業日</h3><p>${esc(dateLabel)}</p></div>${button('作業日を設定',{attrs:{'data-next-date':recordId}})}${disclosure('日付の扱い','<p class="hint">黒板とは別に管理します。変更しても既存写真の日付は変わりません。</p>',{saveKey:'date-help'})}</section>`;
+// 工事全体の作業日。これから撮る写真の作業日と黒板の「撮影月日」に入る。日が変わると撮影・取込の前に確認する。
+export function renderWorkDate({dateLabel,confirmed}){
+  return `<section class="next-date-panel${confirmed?'':' is-unconfirmed'}"><div><h3>作業日（この工事）</h3><p>${esc(dateLabel)}${confirmed?'（今日確認済み）':'（未確認：次の撮影・取込の前に確認します）'}</p></div>${button('作業日を変更',{attrs:{'data-action':'change-work-date'}})}${disclosure('日付の扱い','<p class="hint">これから撮る写真の作業日と、黒板の「撮影月日」に入ります。撮影済みの写真は「写真を整理」の「作業日をまとめて変更」で直します。</p>',{saveKey:'date-help'})}</section>`;
 }
-export function renderProjectSetupFields({name='',routeName='',id}={}){
-  return textField('工事名',{name:'name',id,value:name,max:100,required:true})+textField('路線名',{name:'routeName',value:routeName,max:300,required:true})+'<p class="hint">路線名を入力してから、路線ごとに記録対象を登録します。</p>';
+const todayLocal=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+export function renderProjectSetupFields({name='',routeName='',id,workDate=todayLocal()}={}){
+  return textField('工事名',{name:'name',id,value:name,max:100,required:true})+textField('路線名',{name:'routeName',value:routeName,max:300,required:true})+textField('作業日',{name:'workDate',value:workDate,type:'date',required:true})+'<p class="hint">路線名を入力してから、路線ごとに記録対象を登録します。作業日は黒板の「撮影月日」に入ります。日が変わると、最初の撮影・取込の前に確認します。</p>';
 }
 export function renderInitialView({name='',routeName='',maxPhotos=LIMITS.photos}={}){
   const limitLabel=formatBytes(LIMITS.totalBytes);

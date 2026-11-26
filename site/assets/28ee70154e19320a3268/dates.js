@@ -37,6 +37,30 @@ export function setNextWorkDate(project,recordId,{value='',confirmed=false}) {
   const candidate={workDateDefault:{value,confirmed}};validateRecordDates(candidate);
   record.workDateDefault=candidate.workDateDefault;
 }
+/** 工事全体の作業日。value＝作業日、confirmedOn＝利用者が確認した日の端末の日付（日が変わったら再確認する）。 */
+export function validateProjectWorkDate(value) {
+  if (value === undefined) return;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['value', 'confirmedOn'].includes(key))
+    || !value.value || !validWorkDate(value.value) || !value.confirmedOn || !validWorkDate(value.confirmedOn)) throw new Error('工事の作業日が正しくありません。');
+}
+export function setProjectWorkDate(project, value, today) {
+  const candidate = { value: String(value || '').trim(), confirmedOn: today };
+  if (!candidate.value) throw new Error('作業日を入力してください。');
+  validateProjectWorkDate(candidate);
+  project.workDate = candidate;
+}
+/** 作業日が未設定か、確認した日と今日の日付が違えば、撮影・取込の前に確認する。 */
+export const needsWorkDateConfirm = (project, today) => project?.workDate?.confirmedOn !== today;
+/** 撮影済み写真の作業日をまとめて変え、日付欄のある黒板の「撮影月日」にも同じ日付を入れる。 */
+export function setPhotosWorkDate(project, photoIds, value) {
+  if (!photoIds.length) throw new Error('作業日を変更する写真がありません。');
+  if (!value || !validWorkDate(value)) throw new Error('作業日を年月日で入力してください。');
+  for (const id of photoIds) {
+    const photo = project.photos.find(item => item.id === id);
+    if (!photo) throw new Error('写真が見つかりません。');
+    setPhotoWorkDate(project, id, { value, confirmed: true, sync: hasBoardDate(photo.board) ? 'work-to-board' : 'none' });
+  }
+}
 /** Only an explicitly selected sync operation may change the board date. */
 export function setPhotoWorkDate(project,photoId,{value='',confirmed=false,sync='none'}={}) {
   const photo=project.photos.find(item=>item.id===photoId);

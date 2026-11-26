@@ -1,26 +1,27 @@
 /* Palette, type and spacing are shared by the app. Generated A4 documents own their CSS. */
 :root {
-  --canvas: #f7f8fa;
+  --canvas: #f5f5fb;
   --paper: #ffffff;
   --text: #202630;
   --muted: #606a78;
-  --border: #e0e4e9;
+  --border: #e2e2f0;
   --control-border: #7f8b9a;
   --soft: #f0f2f5;
-  --brand: #435b73;
-  --brand-hover: #334a60;
-  --brand-soft: #f0f3f6;
-  --brand-line: #9fadbb;
+  --brand: #4f4fc4;
+  --brand-hover: #3d3da3;
+  --brand-soft: #ececfb;
+  --brand-line: #aeb0e6;
   --success: #2d6a5f;
   --success-soft: #edf5f2;
   --warning: #875f24;
   --warning-soft: #fbf5e9;
   --danger: #a84549;
   --danger-soft: #fbeef0;
-  --shadow: 0 2px 8px rgb(32 38 48 / .035);
+  --shadow: 0 6px 20px rgb(79 79 196 / .08);
   --shadow-floating: 0 12px 36px rgb(32 38 48 / .12);
-  --radius: 12px;
-  --control-radius: 8px;
+  --radius: 20px;
+  --control-radius: 12px;
+  --button-radius: 999px;
   --space-half: 2px;
   --space-optical: 3px;
   --space-1: 4px;
