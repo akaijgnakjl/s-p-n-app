@@ -415,6 +415,13 @@ function endTrialDialog(){
   if(pendingPhoto)throw new Error('未保存の写真があります。再試行か取消をしてから終了してください。');
   openDialog('お試しを削除して最初に戻る',`<p class="hint keep"><strong>本当に最初の画面に戻りますか？</strong></p><p class="dialog-note">お試しの内容（対象${project.targets.length}件・写真${project.photos.length}枚）をこの端末から消去し、工事を作る最初の画面に戻ります。消した内容は元に戻せません。残したい場合は「本番の工事にする」を使ってください。</p>`,async()=>{await clearWork('お試しを削除して、最初の画面に戻りました。');mode='field';activeGroupId='';activeTargetId='';activeRecordId='';selectedTargetIds.clear();window.scrollTo(0,0);},'削除して最初に戻る');
 }
+// 本番の工事を途中からお試しに切り替える。内容はそのままで、作業ZIPの保存を求めずに削除できるようになる。
+function switchToTrialDialog(){
+  if(isTrialMode())return;
+  openDialog('お試しに切り替える',`<p class="hint keep"><strong>${esc(project.name)}</strong> をお試しに切り替えます。記録対象・写真・黒板・調書はそのまま残ります。</p><p class="dialog-note">お試しにすると、作業ZIPの保存を求めずに「お試しを削除して最初に戻る」で消せるようになります。${dirty?'<strong>作業ZIPに保存していない変更があります。</strong>残したい場合は、先に「↓ 作業ZIPを保存」で保存してください。':''}お試しのままでは作業ZIPに保存できません。残す時は「本番の工事にする」で元に戻せます。</p>`,async()=>{
+    await mutate(next=>{next.trial=true;},'お試しに切り替えました。確認が終わったら「お試しを削除して最初に戻る」で消せます。');
+  },'お試しに切り替える');
+}
 function convertTrialDialog(reason=''){
   // 作業ZIPをお試しとして開いた工事は、工事名を引き継ぎ、撮影済み写真の日付は初期では変えない。
   const route=project.groups.find(group=>group.kind==='路線'&&group.name===TRIAL_ROUTE),hasPhotos=project.photos.length>0,imported=project.name!=='お試し';
@@ -1481,6 +1488,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.action==='start-trial'){run(startTrial);return;}
     if(button.dataset.action==='convert-trial'){convertTrialDialog();return;}
     if(button.dataset.action==='end-trial'){endTrialDialog();return;}
+    if(button.dataset.action==='switch-to-trial'){switchToTrialDialog();return;}
     if (button.dataset.action === 'open') { $('openPackage').click(); return; }
     if (button.dataset.action === 'export') { run(savePackage); return; }
     if (button.dataset.action === 'add-group') { newGroupDialog(); return; }
