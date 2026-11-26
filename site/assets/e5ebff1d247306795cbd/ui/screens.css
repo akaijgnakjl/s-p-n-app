@@ -271,7 +271,36 @@ main, body.has-project main { padding:var(--space-3); }
 .board-choice small { font-size:var(--font-caption); color:var(--muted); }
 .board-choice.selected { border:1px solid var(--brand); background:var(--brand-soft); }
 .board-choice--readonly { border:1px solid var(--border); border-radius:var(--control-radius); }
-.board-catalog-trigger { margin-bottom:var(--space-3); }
+.sub-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--space-2); margin-bottom:var(--space-3); }
+/* 使い方：右側に目立つ枠付きボタン。押すと絵入りの手順を表示する。 */
+.guide-trigger { display:inline-flex; align-items:center; gap:8px; margin-left:auto; border:2px solid var(--brand); background:var(--paper); color:var(--brand-hover); font-weight:700; }
+.guide-icon { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--brand); color:#fff; font-size:13px; line-height:1; }
+#editorDialog:has(.guide) { width:min(1000px,calc(100vw - 32px)); }
+.guide-steps { list-style:none; margin:var(--space-3) 0 0; padding:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:var(--space-3); }
+.guide-step { display:flex; gap:12px; padding:14px; border:1px solid var(--border); border-radius:var(--radius); background:var(--paper); min-width:0; }
+.guide-number { flex:0 0 32px; height:32px; display:grid; place-items:center; border-radius:50%; background:var(--brand); color:#fff; font-weight:700; font-size:16px; }
+.guide-body { min-width:0; flex:1; }
+.guide-body h3 { margin:4px 0 8px; font-size:16px; line-height:1.4; color:var(--text); }
+.guide-body p { margin:8px 0 0; font-size:14px; line-height:1.7; color:var(--text); overflow-wrap:anywhere; }
+.guide-art { display:block; width:100%; height:auto; max-width:320px; font-family:inherit; }
+.guide-art .g-frame { fill:var(--canvas); stroke:var(--border); }
+.guide-art .g-box { fill:var(--paper); stroke:var(--control-border); stroke-width:1.2; }
+.guide-art .g-primary { fill:var(--brand); stroke:var(--brand); }
+.guide-art .g-text { fill:var(--text); font-weight:600; }
+.guide-art .g-on-primary { fill:#fff; font-weight:700; }
+.guide-art .g-muted { fill:var(--muted); }
+.guide-art .g-pointer { fill:#fff; stroke:var(--text); stroke-width:1.4; stroke-linejoin:round; }
+.guide-art .g-photo { fill:var(--brand-line); }
+.guide-art .g-cell { fill:var(--paper); stroke:var(--brand-line); }
+.guide-art .g-paper { fill:var(--paper); stroke:var(--control-border); stroke-width:1.2; }
+.guide-art .g-line { fill:var(--brand-line); }
+.guide-art .g-line-stroke { fill:none; stroke:var(--control-border); stroke-width:1.2; }
+/* 記録対象の操作ボタン：枠と色で押せることが分かる見た目にする。 */
+.target-tools { display:flex; flex-wrap:wrap; gap:8px; margin-left:auto; }
+.tool-button { display:inline-flex; align-items:center; gap:6px; border:1.5px solid var(--brand); background:var(--brand-soft); color:var(--brand-hover); font-weight:700; }
+.tool-button:hover:not(:disabled) { background:var(--brand); border-color:var(--brand); color:#fff; }
+.tool-icon { font-size:15px; line-height:1; }
+@media(max-width:760px) { .target-tools { margin-left:0; width:100%; } .target-tools .tool-button { flex:1 1 100%; justify-content:center; } }
 @media(max-width:760px) { .board-catalog { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 
 #boardDraftStatus, #reportEditStatus { min-height:3.4em; }

@@ -200,7 +200,7 @@ function issuePages(issues) {
 
 /** Freeze selection and all metadata before asynchronous image work or UI callbacks. */
 export function buildOutputModel(project, { recordIds, edition = 'draft' } = {}) {
-  if (!['draft', 'final'].includes(edition)) throw outputError('invalid-edition', '途中版または完成版を選択してください。');
+  if (!['draft', 'final', 'plain'].includes(edition)) throw outputError('invalid-edition', '出力の種類を確認してください。');
   const snapshot = structuredClone(project);
   try { validateProject(snapshot); } catch (error) { throw outputError('invalid-reference', `工事データの参照を確認してください：${error.message}`); }
   const contexts = selectRecords(snapshot, recordIds ? [...recordIds] : recordIds);
@@ -220,14 +220,14 @@ export function buildOutputModel(project, { recordIds, edition = 'draft' } = {})
     if (review !== 'reviewed') issues.push(issueFor(context, review === 'stale' ? 'report-stale' : 'report-unreviewed', review === 'stale' ? '調書を変更した後の再確認が必要です。' : '調書の内容確認が必要です。'));
     return { projectName:snapshot.name,recordId: record.id, targetId: target.id, targetName: target.name, useCase: target.useCase,
       category: record.category, groupId: target.groupId, groupLabel: groupLabel(group), record,
-      sectionData:effectiveReportSection(snapshot,record.id),section: sectionLabel(effectiveReportSection(snapshot,record.id)), itemName: getReportItemName(snapshot, record.id), review, slots, groupName:group?.name||'路線未設定' };
+      sectionData:effectiveReportSection(snapshot,record.id),section: sectionLabel(effectiveReportSection(snapshot,record.id)), itemName: getReportItemName(snapshot, record.id), review, slots, groupName:group?.name||'路線未設定', sealMark:group?.tsSeal!==false };
   });
   if (edition === 'final' && issues.length) throw outputError('unfinished-output', `完成版には未完了の項目が${issues.length}件あります。内容を確認する場合は途中版を選択してください。`, issues);
   const pages=[];
   for(const useCase of Object.keys(USE_CASES)){
     const chosen=records.filter(record=>record.useCase===useCase);
     if(!chosen.length)continue;
-    pages.push(...reportPages(chosen),...issuePages(issues.filter(issue=>issue.useCase===useCase)),...photoPages(chosen));
+    pages.push(...reportPages(chosen),...(edition==='draft'?issuePages(issues.filter(issue=>issue.useCase===useCase)):[]),...photoPages(chosen));
   }
   return { edition, projectId: snapshot.id, projectName: snapshot.name, project: snapshot,
     recordIds: records.map(record => record.recordId), records, issues, pages,
@@ -270,7 +270,7 @@ export async function buildOutputHTML(project, originals, { recordIds, edition =
     if (selectedIds.has(photo.id)) sourceOriginals.set(photo.id, blob);
   }
   const usePrepared = validateImage === defaultValidateImage && composePhoto === defaultComposePhoto;
-  const editionLabel = model.edition === 'draft' ? `途中版 · 未完了 ${model.issues.length}件` : '完成版';
+  const editionLabel = model.edition === 'draft' ? `途中版 · 未完了 ${model.issues.length}件` : model.edition === 'plain' ? '調書・写真帳' : '完成版';
   const projectNameLines = wrapOutputText(model.projectName, 53);
   const parts = [], append = markup => parts.push(format === 'blob' ? new Blob([markup], { type: 'text/html' }) : markup);
   append(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHTML(model.projectName)} 調書・写真帳 ${escapeHTML(editionLabel)}</title><style>${PRINT_LAYOUT_CSS}</style></head><body>${printToolbar(editionLabel)}`);

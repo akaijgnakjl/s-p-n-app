@@ -62,7 +62,7 @@ export const TS_ROW_EDGES=Object.freeze(Array.from({length:TS_ROWS+1},(_,i)=>Mat
 const TS_X=[47.511,103.431,153.471,203.511,253.551,303.591,353.631,403.671,453.711,503.751,553.791];
 export function planTSReports(records){
   if(records.some(c=>tsReportCells(c).some((v,i)=>wrap(v,i?46:52,7.68).length>1)||wrap(`${c.projectName}　${c.groupName}`,640,8.28).length>1||wrap(c.record.reportFields?.surveyor,160,9.48).length>1||['standard','internalStandard'].some(key=>wrap(c.record.reportFields?.[key],78,6.84).length>1)))return null;
-  const groups=new Map();for(const c of records){const f=c.record.reportFields||{},key=JSON.stringify([c.groupId,f.surveyor,f.standard,f.internalStandard]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(c);}
+  const groups=new Map();for(const c of records){const f=c.record.reportFields||{},key=JSON.stringify([c.groupId,f.surveyor,f.standard,f.internalStandard,c.sealMark!==false]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(c);}
   const pages=[];for(const group of groups.values())for(let at=0;at<group.length;at+=TS_ROWS)pages.push({kind:'report',useCase:'TS出来形(バリアフリー)',title:'測定結果一覧表',referenceLayout:'ts',orientation:'landscape',groupName:group[0].groupName,records:group.slice(at,at+TS_ROWS),continued:at>0,usedMm:mm(340.44)});return pages;
 }
 const spread=(value,x,end,y,size=6.84)=>Array.from(value).map((v,i,a)=>text(x+(end-x)*i/Math.max(1,a.length-1),y,v,size,'start')).join('');
@@ -70,7 +70,7 @@ export function printMeasuredTS(page){
   const first=page.records[0],f=first.record.reportFields||{};let b=text(418.311,90.72,'測定結果一覧表',13.44)+line(358.911,94.68,477.711,.49);
   b+=text(107.031,119.64,'工事名',8.28,'start')+text(140.391,119.64,`${first.projectName}　${page.groupName}`,8.28,'start')+line(102.711,121.92,329.151,.49);
   b+=text(109.911,146.4,'工種',9.48,'start')+text(136.191,146.4,'縁石工',9.48,'start')+line(102.711,149.16,329.151,.49)+text(109.911,173.4,'種別',9.48,'start')+text(136.191,173.4,'延長（偏心量）',9.48,'start')+line(102.711,176.16,329.151,.49);
-  b+=text(556.79,173.4,'測定者',9.48,'start')+text(670.071,173.64,f.surveyor||'',9.48)+text(773.39,173.4,'印',9.48,'start')+line(553.31,176.16,789.35,.49);
+  b+=text(556.79,173.4,'測定者',9.48,'start')+text(670.071,173.64,f.surveyor||'',9.48)+(first.sealMark===false?'':text(773.39,173.4,'印',9.48,'start'))+line(553.31,176.16,789.35,.49);
   for(const [x,fill] of [[103.431,'#80ffff'],[253.551,'#ff80ff'],[403.671,'#ffff80']])b+=rect(x,188.76,150.24,15.48,fill);
   for(const x of [153.471,303.591])b+=rect(x,256.56,50.16,271.8,'#ffffcc');
   b+=rect(47.031,188.28,.96,340.44)+rect(789.951,189.24,.96,339.48);

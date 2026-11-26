@@ -197,6 +197,11 @@ export function setTSCommonFields(project, groupId, values) {
     const records = tsRouteRecords(next, groupId);
     for (const key of TS_COMMON_KEYS) validateReportValue(values[key]);
     for (const record of records) record.reportFields = { ...(record.reportFields || {}), ...Object.fromEntries(TS_COMMON_KEYS.map(key => [key, values[key]])) };
+    // 測定結果一覧表の「印」は路線ごとに表示・非表示を選べる（未設定は表示）。
+    if (values.seal !== undefined) {
+      if (typeof values.seal !== 'boolean') fail('印の表示は「表示する」か「表示しない」で選んでください。');
+      next.groups.find(group => group.id === groupId).tsSeal = values.seal;
+    }
     return records.map(record => record.id);
   });
 }

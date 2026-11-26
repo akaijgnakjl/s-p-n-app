@@ -27,6 +27,7 @@ import {detailHero,detailSection,renderDateDetails,photoTimeline,photoPagination
 import {renderTargetPicker,renderTargetTabs,renderPhotoSlot,renderBoardPanel,renderHistoryPanel,renderCaptureProgress,renderBoardChoices,renderTargetNavigation,renderTSReading} from './ui/field-view.js';
 import {renderProjectHeader,renderCapacity,renderNextDate,renderInitialView,renderProjectSetupFields,renderHandoff,renderFinishWork} from './ui/project-view.js';
 import {mountAppShell} from './ui/shell.js';
+import {renderGuide} from './ui/guide.js';
 import {createNotifications} from './ui/notifications.js';
 import {createFloatingDisclosures} from './ui/floating.js';
 import {createViewPosition} from './ui/view-position.js';
@@ -79,7 +80,7 @@ let onlyMissing = false;
 let reportUseCase = '基準点';
 let applyBoardAll = false;
 const reportDrafts = new Map();
-const outputState = {groupId:'__all__',useCase:'',selectedIds:new Set(),edition:'draft',prepared:null,ready:false,approved:false,initialized:false};
+const outputState = {groupId:'__all__',useCase:'',selectedIds:new Set(),edition:'plain',prepared:null,ready:false,approved:false,initialized:false};
 const thumbnails = new Map();
 const thumbnailURLs = new Map();
 const boardDrafts = new Map();
@@ -136,7 +137,7 @@ function restoreSession(raw){
   reportDrafts.clear();for(const entry of d.reports)reportDrafts.set(...entry);
   boardDrafts.clear();for(const entry of d.boards)boardDrafts.set(...entry);
   pendingPaste=d.pendingPaste;dirty=v.zipDirty||draftCounts()>0;lastExportAt=v.lastExportAt?new Date(v.lastExportAt):null;
-  Object.assign(outputState,v.output,{selectedIds:new Set(v.output.selectedIds),prepared:null,ready:false,approved:false});
+  Object.assign(outputState,v.output,{edition:'plain',selectedIds:new Set(v.output.selectedIds),prepared:null,ready:false,approved:false});
   return {view:v,issues:clean.issues};
 }
 
@@ -506,8 +507,9 @@ function tsCommonDialog(groupId){
     return round(s*p/100);
   };
   const preview=()=>{const form=$('editorForm'),mode=form.elements.internalMode.value;form.querySelector('[data-internal="percent"]').hidden=mode!=='percent';form.querySelector('[data-internal="mm"]').hidden=mode!=='mm';let text='';try{const mm=internalMm(new FormData(form));text=mode==='percent'&&mm?`＝ 社内規格値 ${mm} mm`:'';}catch(error){text=mode==='percent'?error.message:'';}$('internalPreview').textContent=text;};
-  openDialog('測定者・規格値・社内規格値を一括入力',`<p>${esc(group.name)}のTS出来形 ${records.length}記録に同じ値を入れます。入力済みの値は上書きされます。</p><div class="dialog-fields">${field('測定者','surveyor',initial('surveyor'),{required:false})}${field('規格値 mm','standard',initial('standard'),{required:false})}${selectField('社内規格値の入れ方',optionItems([['percent','規格値に対する％で入力'],['mm','mmで直接入力']],'percent'),{name:'internalMode'})}<div data-internal="percent">${field('社内規格値 ％（規格値に対する割合）','internalPercent',percent0,{required:false})}</div><div data-internal="mm" hidden>${field('社内規格値 mm','internalStandard',initial('internalStandard'),{required:false})}</div><p id="internalPreview" class="hint keep" role="status"></p></div><p class="hint">記録ごとの変更は調書の表でできます。</p>`,async data=>{
+  openDialog('測定者・規格値・社内規格値・印を一括入力',`<p>${esc(group.name)}のTS出来形 ${records.length}記録に同じ値を入れます。入力済みの値は上書きされます。</p><div class="dialog-fields">${field('測定者','surveyor',initial('surveyor'),{required:false})}${field('規格値 mm','standard',initial('standard'),{required:false})}${selectField('社内規格値の入れ方',optionItems([['percent','規格値に対する％で入力'],['mm','mmで直接入力']],'percent'),{name:'internalMode'})}<div data-internal="percent">${field('社内規格値 ％（規格値に対する割合）','internalPercent',percent0,{required:false})}</div><div data-internal="mm" hidden>${field('社内規格値 mm','internalStandard',initial('internalStandard'),{required:false})}</div><p id="internalPreview" class="hint keep" role="status"></p>${selectField('測定結果一覧表の「印」',optionItems([['on','表示する'],['off','表示しない（消す）']],group.tsSeal===false?'off':'on'),{name:'seal'})}</div><p class="hint">記録ごとの変更は調書の表でできます。</p>`,async data=>{
     const values=Object.fromEntries(TS_COMMON_KEYS.map(key=>[key,String(data.get(key)||'').trim()]));
+    values.seal=data.get('seal')!=='off';
     values.internalStandard=internalMm(data);
     const clearReportKeys=records.flatMap(r=>TS_COMMON_KEYS.map(key=>`${r.id}:${key}`));
     await mutate(next=>setTSCommonFields(next,groupId,values),`${group.name}のTS出来形 ${records.length}記録に反映しました。`,{clearReportKeys});
@@ -686,12 +688,11 @@ async function prepareOutput(){
   requireSavedNames();
   requireResolvedPaste();
   await flushBoardDrafts(true);await flushReportDrafts(true);
-  if(outputState.edition==='final'&&buildOutputModel(project,{recordIds:selectedOutputIds(),edition:'draft'}).issues.length){outputState.edition='draft';notify('不足・未確認があるため、途中版に切り替えました。');}
   showProgress('調書と写真を確認中…');
   invalidateOutput();
-  const result=await cancellable(signal=>buildOutputHTML(project,originals,{recordIds:selectedOutputIds(),edition:outputState.edition,onProgress:showProgress,signal,format:'blob'}));
-  outputState.prepared={...result,fingerprint:JSON.stringify(project)};outputState.ready=false;outputState.approved=false;
-  notify(`${result.model.edition==='draft'?'途中版':'完成版'}のプレビューを作成しました（${result.model.pageCount}ページ）。`);
+  const result=await cancellable(signal=>buildOutputHTML(project,originals,{recordIds:selectedOutputIds(),edition:'plain',onProgress:showProgress,signal,format:'blob'}));
+  outputState.prepared={...result,fingerprint:JSON.stringify(project)};outputState.ready=false;outputState.approved=true;
+  notify(`調書・写真帳のプレビューを作成しました（${result.model.pageCount}ページ）。`);
 }
 
 function observeOutputFrame(frame,prepared) {
@@ -710,7 +711,7 @@ function observeOutputFrame(frame,prepared) {
           event.preventDefault();openDocumentPreview(frame);
         });
       }
-      const button=$('printOutput');if(button){button.dataset.unavailable=String(!outputState.approved);updateDisabled();}
+      const button=$('printOutput');if(button){button.dataset.unavailable='false';updateDisabled();}
     }catch(error){if(frame.isConnected&&frame.contentDocument===doc&&outputState.prepared===prepared)notify(`出力画像を準備できません：${error.message}`,true);}
   };
   frame.onload=ready;
@@ -730,7 +731,7 @@ function openDocumentPreview(frame=$('outputPreview'),trigger=document.activeEle
   if(!frame||!outputState.prepared||!outputState.ready)throw new Error('プレビューの準備中です。完了後に開いてください。');
   const prepared=outputState.prepared;
   trigger=floating.returnTarget(trigger);floating.close();
-  previewViewer.showDocument({frame,title:`${prepared.model.edition==='draft'?'途中版':'完成版'} 調書・写真帳（${prepared.model.pageCount}ページ）`,caption:'PDF保存と同じ内容です。拡大率は印刷に影響しません。',trigger});
+  previewViewer.showDocument({frame,title:`調書・写真帳（${prepared.model.pageCount}ページ）`,caption:'PDF保存と同じ内容です。拡大率は印刷に影響しません。',trigger});
 }
 function openImagePreview(photoId,composed=false,trigger=document.activeElement){
   const photo=project.photos.find(p=>p.id===photoId);if(!photo)throw new Error('写真が見つかりません。');
@@ -797,8 +798,7 @@ async function currentOutputHTML(prepared){
 async function openPrintOutput(){
   requireSavedNames();
   const prepared=outputState.prepared;
-  if(prepared&&outputState.ready&&!outputState.approved)throw new Error('出力画面の「出力範囲・版・写真・調書の内容を確認しました」にチェックしてから印刷してください。');
-  if(!prepared||!outputState.ready||!outputState.approved||prepared.fingerprint!==JSON.stringify(project)||boardDrafts.size||reportDrafts.size)throw new Error('最新のプレビューを作成し、内容を確認してください。');
+  if(!prepared||!outputState.ready||prepared.fingerprint!==JSON.stringify(project)||boardDrafts.size||reportDrafts.size)throw new Error('最新のプレビューを作成し、内容を確認してください。');
   const win=window.open('','_blank');if(!win)throw new Error('印刷画面を開けません。ポップアップの許可を確認してください。');
   try{
     const html=await currentOutputHTML(prepared);
@@ -915,12 +915,12 @@ function unnecessaryDialog(recordId, slotName) {
 
 function nextWorkDateDialog(recordId) {
   const {record}=getContext(project,recordId),value=record.workDateDefault||{value:'',confirmed:false};
-  openDialog('次回用の作業日を設定',`<div class="dialog-fields">${field('次の写真の作業日','workDate',value.value,{type:'date',required:false})}</div><p class="dialog-note">次に撮影・選択する写真に使います。空欄なら当日の日付です。既存の写真・黒板は変わりません。完成版の条件には影響しません。</p>`,data=>mutate(next=>setNextWorkDate(next,recordId,{value:data.get('workDate'),confirmed:data.get('confirmed')==='on'}),'次回用の作業日を保存しました。'));
+  openDialog('次回用の作業日を設定',`<div class="dialog-fields">${field('次の写真の作業日','workDate',value.value,{type:'date',required:false})}</div><p class="dialog-note">次に撮影・選択する写真に使います。空欄なら当日の日付です。既存の写真・黒板は変わりません。</p>`,data=>mutate(next=>setNextWorkDate(next,recordId,{value:data.get('workDate'),confirmed:data.get('confirmed')==='on'}),'次回用の作業日を保存しました。'));
 }
 
 function photoDateDialog(id) {
   const photo=project.photos.find(item=>item.id===id);
-  openDialog('作業日の確認・訂正',`<p class="hint">${esc(photo.originalName)}<br>${esc(captureSourceLabel(photo))}<br>取込日時：${esc(timestampLabel(photo.importedAt))}<br>実際の撮影日時：${esc(timestampLabel(photo.capturedAt))}</p>${dateState(photo)==='legacy'?'<p class="dialog-note">旧ZIPのため、日付の出所を判断できません。自動では確認済みにしません。</p>':''}<div class="dialog-fields">${field('作業日（任意）','workDate',photo.workDate,{type:'date',required:false})}${hasBoardDate(photo.board)?`<p>黒板日付：${esc(photo.board.values.date||'空欄')}${photo.workDate!==photo.board.values.date?'（作業日と不一致）':''}</p>${selectField('黒板日付の扱い',optionItems([['none','作業日だけ保存（黒板は変えない）'],['board-to-work','黒板の日付を作業日にする'],['work-to-board','作業日を黒板の日付にする']]),{name:'sync'})}`:''}</div><p class="hint">原本・所属・取込日時は変わりません。作業日は完成版の条件に影響しません。</p>`,async data=>{
+  openDialog('作業日の確認・訂正',`<p class="hint">${esc(photo.originalName)}<br>${esc(captureSourceLabel(photo))}<br>取込日時：${esc(timestampLabel(photo.importedAt))}<br>実際の撮影日時：${esc(timestampLabel(photo.capturedAt))}</p>${dateState(photo)==='legacy'?'<p class="dialog-note">旧ZIPのため、日付の出所を判断できません。自動では確認済みにしません。</p>':''}<div class="dialog-fields">${field('作業日（任意）','workDate',photo.workDate,{type:'date',required:false})}${hasBoardDate(photo.board)?`<p>黒板日付：${esc(photo.board.values.date||'空欄')}${photo.workDate!==photo.board.values.date?'（作業日と不一致）':''}</p>${selectField('黒板日付の扱い',optionItems([['none','作業日だけ保存（黒板は変えない）'],['board-to-work','黒板の日付を作業日にする'],['work-to-board','作業日を黒板の日付にする']]),{name:'sync'})}`:''}</div><p class="hint">原本・所属・取込日時は変わりません。</p>`,async data=>{
     await mutate(next=>{setPhotoWorkDate(next,id,{value:data.get('workDate'),confirmed:data.get('confirmed')==='on',sync:data.get('sync')||'none'});const changed=next.photos.find(item=>item.id===id);if(data.get('sync')==='work-to-board'&&changed.applyBoard)boardFits(changed.board,{skipPoint:isTrial(getContext(next,changed.recordId).target.useCase)});},'作業日を保存しました。');
   });
 }
@@ -1081,7 +1081,7 @@ function captureView({group,target,record,visible}){
   if(record){
     const def=USE_CASES[target.useCase],remaining=def.categories.filter(c=>!target.records.some(r=>r.category===c));
     const tabs=record=>tabBar(target.records.map(r=>tabButton(`${def.categoryLabel}：${r.category}`,{selected:r.id===record.id,attrs:{'data-record':r.id}})).join('')+(remaining.length?button(`＋ ${def.categoryLabel}の記録を追加`,{className:'add-record',attrs:{'data-action':'add-record'}}):''),{label:def.categoryLabel,className:'record-tabs'});
-    selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title${nameDrafts.has(target.id)?' is-editing':''}">${inlineTargetName(target)}${badge(target.useCase)}${button('管理名・所属を訂正',{variant:'subtle',attrs:{'data-edit-target':target.id}})}${button(`管理名をまとめて変更（${visible.length}件）`,{variant:'subtle',attrs:{'data-action':'rename-visible-targets',title:'表示中の記録対象の管理名を、Excel等からの貼り付けでまとめて変更します'}})}${target.useCase==='TS出来形(バリアフリー)'?button('スクリーンショットをまとめて取り込む',{variant:'subtle',attrs:{'data-action':'batch-ts-screenshots',title:'複数のスクリーンショットの計測箇所を読み取り、同じ管理名の記録対象へ振り分けます'}}):''}</div>${renderTargetNavigation(visible,target.id,{placement:'top'})}<p class="hint keep">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">区分を確認してから写真の種類を選んでください。</p>${tabs(record)}${target.useCase==='TS出来形(バリアフリー)'?renderTSReading(record):''}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div>${renderTargetNavigation(visible,target.id,{placement:'bottom'})}</section>`;
+    selected=`<section class="panel"><span class="eyebrow">${esc(def.targetLabel)} / ${esc(target.useCase)}</span><div class="active-target-title"><div class="inline-name-label"><strong>${esc(target.name)}</strong></div><div class="target-tools">${button('<span class="tool-icon" aria-hidden="true">✎</span>管理名・所属を訂正',{className:'tool-button',html:true,attrs:{'data-edit-target':target.id}})}${button(`<span class="tool-icon" aria-hidden="true">☰</span>管理名をまとめて変更（${visible.length}件）`,{className:'tool-button',html:true,attrs:{'data-action':'rename-visible-targets',title:'表示中の記録対象の管理名を、Excel等からの貼り付けでまとめて変更します'}})}${target.useCase==='TS出来形(バリアフリー)'?button('<span class="tool-icon" aria-hidden="true">⇪</span>スクリーンショットをまとめて取り込む',{className:'tool-button',html:true,attrs:{'data-action':'batch-ts-screenshots',title:'複数のスクリーンショットの計測箇所を読み取り、同じ管理名の記録対象へ振り分けます'}}):''}</div></div>${renderTargetNavigation(visible,target.id,{placement:'top'})}<p class="hint keep">${esc(locationLabel(group))} ／ ${esc(def.categoryLabel)}：${esc(record.category)}</p><p class="hint">区分を確認してから写真の種類を選んでください。</p>${tabs(record)}${target.useCase==='TS出来形(バリアフリー)'?renderTSReading(record):''}${nextDatePanel(record)}<div class="slot-list">${record.slots.map(slot=>slotHTML(record,slot)).join('')}</div>${renderTargetNavigation(visible,target.id,{placement:'bottom'})}</section>`;
     if(target.useCase==='MMS')board='<section class="panel"><p class="hint">MMSは作業前後の写真を原本のまま記録します。黒板・座標・施工区間・調書は不要です。</p></section>';
     else{const draft=boardDraft(record);board=renderBoardPanel({recordId:record.id,slotName:activeCaptureSlot,fieldsHTML:boardFields(draft.board,draft.applyBoard,false,{omitPoint:isTrial(target.useCase),fixedTS:target.useCase==='TS出来形(バリアフリー)'}),choicesHTML:renderBoardChoices(draft.board.templateId,{formId:'boardForm'}),trial:isTrial(target.useCase),noteAuto:draft.noteMode==='auto',applyBoard:draft.applyBoard,editing:boardDrafts.has(record.id),applyAll:applyBoardAll,scopeLabel:activeGroupId==='__all__'?'全路線':project.groups.find(g=>g.id===activeGroupId)?.name||'工事直下'});}
   }else selected=emptyState('記録対象を追加','用途と管理名を指定して登録します。施工区間は任意です。',{actions:button('記録対象を追加',{variant:'primary',attrs:{'data-action':'add-targets'}})});
@@ -1328,9 +1328,7 @@ $('app').addEventListener('change', event => {
   if(event.target.id==='onlyMissing'){onlyMissing=event.target.checked;render();}
   if(event.target.id==='outputGroup'){outputState.groupId=event.target.value;resetOutputSelection();render();}
   if(event.target.id==='outputUse'){outputState.useCase=event.target.value;resetOutputSelection();render();}
-  if(event.target.id==='outputEdition'){outputState.edition=event.target.value;invalidateOutput();render();}
   if(event.target.dataset.outputRecord){if(event.target.checked)outputState.selectedIds.add(event.target.dataset.outputRecord);else outputState.selectedIds.delete(event.target.dataset.outputRecord);invalidateOutput();render();}
-  if(event.target.id==='outputApproved'){outputState.approved=event.target.checked;const button=$('printOutput');if(button){button.dataset.unavailable=String(!outputState.ready||!outputState.approved);updateDisabled();}}
 });
 $('app').addEventListener('paste',event=>{
   const input=event.target.closest('[data-report-key]');if(!input)return;
@@ -1410,7 +1408,7 @@ function handleWorkspaceClick(event) {
     if(button.dataset.organizeView){const groupId=activeGroupId;organizeState=createOrganizeState();organizeState.groupId=groupId;const v=button.dataset.organizeView;if(v==='missing')organizeState.onlyMissing=true;if(v==='unconfirmed')organizeState.dateStatus='needs-confirmation';if(v==='stale')organizeState.reportStatus='stale';render();return;}
     if(button.dataset.action==='retry-photo'){void retryPendingPhoto();return;}
     if(button.dataset.action==='discard-photo'){pendingPhoto=null;$('photoInput').value='';$('cameraInput').value='';renderDraftNotice();notify('未保存の写真を取り消しました。');return;}
-    if(button.dataset.action==='resolve-names'){const id=nameDrafts.keys().next().value;if(!id)return;activeGroupId='__all__';useCaseFilter='';onlyMissing=false;activeTargetId=id;activeRecordId='';mode='field';render();const editor=document.querySelector(`[data-name-editor="${CSS.escape(id)}"]`);floating.open(editor,{anchor:document.querySelector('#draftNotice [data-action="resolve-names"]')||button});editor?.querySelector('[data-name-draft]')?.focus({preventScroll:true});return;}
+    if(button.dataset.action==='resolve-names'){const id=nameDrafts.keys().next().value;if(!id)return;activeGroupId='__all__';useCaseFilter='';onlyMissing=false;activeTargetId=id;activeRecordId='';mode='organize';render();const input=document.querySelector(`[data-name-draft="${CSS.escape(id)}"]`),box=input?.closest('details');if(box)box.open=true;input?.scrollIntoView({block:'center'});input?.focus({preventScroll:true});return;}
     if(button.dataset.action==='discard-reports'){const ids=new Set(scopedRecords(project,activeGroupId,reportUseCase).map(c=>c.record.id));for(const key of reportDrafts.keys())if(ids.has(key.slice(0,key.indexOf(':'))))reportDrafts.delete(key);render();notify('表示中の調書の編集を取り消しました。他の範囲の下書きは残ります。');return;}
     if (button.dataset.action === 'new') { newProjectDialog(); return; }
     if (button.dataset.action === 'open') { $('openPackage').click(); return; }
@@ -1451,7 +1449,7 @@ function handleWorkspaceClick(event) {
     }
     if(button.dataset.action==='prepare-output'){run(prepareOutput);return;}
     if(button.dataset.action==='print-output'){void openPrintOutput().catch(error=>notify(error.message,true));return;}
-    if(button.dataset.action==='save-output-html'){requireSavedNames();const prepared=outputState.prepared;if(prepared)void currentOutputHTML(prepared).then(html=>download(new Blob([html],{type:'text/html'}),`${project.name}_${prepared.model.edition==='draft'?'途中版':'完成版'}_簡易調書写真帳.html`)).catch(error=>notify(error.message,true));return;}
+    if(button.dataset.action==='save-output-html'){requireSavedNames();const prepared=outputState.prepared;if(prepared)void currentOutputHTML(prepared).then(html=>download(new Blob([html],{type:'text/html'}),`${project.name}_簡易調書写真帳.html`)).catch(error=>notify(error.message,true));return;}
     if (button.dataset.mode) { run(async()=>{await flushBoardDrafts(true);await flushReportDrafts(true);enterMode(button.dataset.mode);}); return; }
     if (button.dataset.target) { mode='field';useCaseFilter='';onlyMissing=false;activeTargetId = button.dataset.target; activeRecordId = '';activeCaptureSlot='';render(); return; }
     if (button.dataset.record) { activeRecordId = button.dataset.record;activeCaptureSlot=''; render(); return; }
@@ -1529,6 +1527,7 @@ $('previewDialog').addEventListener('close',()=>setPreviewEditing(false));
 $('prepareOffline').onclick=()=>run(()=>offlineManager.prepare());
 $('checkUpdate').onclick=()=>run(()=>offlineManager.checkForUpdate());
 $('applyUpdate').onclick=updateAppDialog;
+$('appGuide').onclick=()=>openDialog('アプリの使い方',renderGuide(),async()=>{},'閉じる');
 $('boardCatalog').onclick=()=>openDialog('黒板一覧',`<p class="hint">5種類の黒板です。撮影画面で次の写真の形式を選べます。</p>${renderBoardChoices(null,{selectable:false})}`,async()=>{},'閉じる');
 document.addEventListener('click',event=>{
   const preview=event.target.closest('[data-preview-board]');

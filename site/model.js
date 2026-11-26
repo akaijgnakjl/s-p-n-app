@@ -89,6 +89,7 @@ export function validateProject(project) {
   const ids = new Set(), groups = new Map(), groupNames = new Set(), targetNames = new Map(), records = new Map(), photoOwners = new Map(); checkId(project.id, ids, '工事');
   for (const group of project.groups) {
     if(group.reportSection!=null)validateReportSection(group.reportSection);
+    if(group.tsSeal!=null&&typeof group.tsSeal!=='boolean')fail('印の表示設定が正しくありません');
     if (!object(group) || !GROUP_KINDS.includes(group.kind)) fail('グループの種類が正しくありません'); rejectKeys(group, ['points']); checkId(group.id, ids, 'グループ'); text(group.name, 'グループ名', { max: 300, required: true, multiline: true });
     const name = `${group.kind}\0${normalizedName(group.name.trim())}`; if (groupNames.has(name)) fail('同じ種類に同名のグループがあります'); groupNames.add(name); groups.set(group.id, group);
   }
@@ -148,7 +149,7 @@ export function upgradeProject(raw) {
   const result = { ...rest, schemaVersion: 2, appVersion: '0.2.0', groups, targets, photos }; validateProject(result); return result;
 }
 
-export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.9.21', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
+export function createProject(name) { const value = inputName(name, '工事名', 100), timestamp = now(); return { format: FORMAT, schemaVersion: 2, appVersion: '0.9.22', id: uid(), name: value, createdAt: timestamp, updatedAt: timestamp, groups: [], targets: [], photos: [] }; }
 export function addGroup(project, { kind, name } = {}) {
   validateProject(project); if (!GROUP_KINDS.includes(kind)) fail('グループの種類を選択してください'); const value = inputName(name, 'グループ名'); if (project.groups.length >= LIMITS.groups) fail('グループは50以内にしてください'); if (project.groups.some(group => group.kind === kind && normalizedName(group.name.trim()) === normalizedName(value))) fail('同じ種類に同名のグループがあります');
   const group = { id: uid(), kind, name: value }; project.groups.push(group); project.updatedAt = now(); return group;

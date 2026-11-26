@@ -13,7 +13,7 @@ export function printToolbar(editionLabel) {
 export function printPhotoFigure(slot, imageURLs, small = false, statusLabels) {
   const status = statusLabels[slot.status];
   const image = slot.photo ? imageURLs.get(slot.photo.id) : null;
-  return `<figure class="photo-box${small ? ' near-photo' : ''}"><figcaption>${escapeHTML(slot.name)} · ${escapeHTML(status)}</figcaption>${image ? `<img src="${image}" alt="${escapeHTML(slot.name)}">` : `<div class="photo-placeholder">${escapeHTML(status)}${slot.status === 'unnecessary' ? '<br>理由は写真情報に記載' : '<br>途中版・未完了'}</div>`}</figure>`;
+  return `<figure class="photo-box${small ? ' near-photo' : ''}"><figcaption>${escapeHTML(slot.name)} · ${escapeHTML(status)}</figcaption>${image ? `<img src="${image}" alt="${escapeHTML(slot.name)}">` : `<div class="photo-placeholder">${escapeHTML(status)}${slot.status === 'unnecessary' ? '<br>理由は写真情報に記載' : ''}</div>`}</figure>`;
 }
 
 export function printPageBody(page, imageURLs, statusLabels) {
