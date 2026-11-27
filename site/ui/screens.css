@@ -280,7 +280,8 @@ main, body.has-project main { padding:var(--space-3); }
 .guide-icon { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--brand); color:#fff; font-size:13px; line-height:1; }
 #editorDialog:has(.guide) { width:min(1080px,calc(100vw - 32px)); }
 /* 使い方：項目タブはラジオボタン＋CSSで切り替える。 */
-.guide { position:relative; }
+.guide { position:relative; min-width:0; max-width:100%; }
+.guide-panel, .guide-figure { min-width:0; max-width:100%; }
 .guide-radio { position:absolute; top:0; left:0; width:1px !important; height:1px !important; min-height:0 !important; margin:0; padding:0; opacity:0; pointer-events:none; }
 .guide-tabs { display:flex; flex-wrap:wrap; gap:6px; margin:var(--space-2) 0 var(--space-3); padding-bottom:var(--space-2); border-bottom:1px solid var(--border); }
 .guide-tab { display:inline-flex; align-items:center; min-height:40px; padding:6px 14px; border:1.5px solid var(--border); border-radius:999px; background:var(--paper); color:var(--text); font-size:14px; font-weight:700; cursor:pointer; }
@@ -300,6 +301,11 @@ main, body.has-project main { padding:var(--space-3); }
 .guide:has(#guide-tab-output:checked) [data-guide-tab="output"] { border-color:var(--brand); background:var(--brand); color:#fff; }
 .guide:has(#guide-tab-handoff:checked) [data-guide-panel="handoff"] { display:block; }
 .guide:has(#guide-tab-handoff:checked) [data-guide-tab="handoff"] { border-color:var(--brand); background:var(--brand); color:#fff; }
+.guide:has(#guide-tab-trial:checked) [data-guide-panel="trial"] { display:block; }
+.guide:has(#guide-tab-trial:checked) [data-guide-tab="trial"] { border-color:var(--warning); background:var(--warning); color:#fff; }
+.guide-tab[data-guide-tab="trial"] { border-color:var(--warning); color:var(--warning); }
+.guide-trial-note { padding:10px 14px; border:1px dashed var(--warning); border-radius:var(--control-radius); background:var(--warning-soft); }
+.guide-trial-note label { color:var(--warning); font-weight:700; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
 .guide:has(.guide-radio:focus-visible) .guide-tabs { outline:2px solid var(--brand-line); outline-offset:4px; border-radius:8px; }
 .guide-panel h3 { margin:var(--space-3) 0 6px; font-size:17px; line-height:1.4; color:var(--text); }
 .guide-intro { margin:0 0 var(--space-3); font-size:14px; line-height:1.7; color:var(--text); }
